@@ -7,6 +7,10 @@ from .tools import (
     ConteoEstadosTramiteEspecificoTool,
     SolicitudesPorEstadoTool,
     ListAvailableReportsTool,
+    ObtenerRolesUsuarioTool,
+    ListarUsuariosPorRolTool,
+    ConsultarAtencionesAgenteTool,
+    ConsultarAtencionesAgentePorTramiteTool,
 )
 
 # --- App Initialization ---
@@ -23,6 +27,10 @@ tools_registry = {
     "conteo_estados_tramite_especifico": ConteoEstadosTramiteEspecificoTool(),
     "solicitudes_por_estado": SolicitudesPorEstadoTool(),
     "list_available_reports": ListAvailableReportsTool(),
+    "obtener_roles_usuario": ObtenerRolesUsuarioTool(),
+    "listar_usuarios_por_rol": ListarUsuariosPorRolTool(),
+    "consultar_atenciones_agente": ConsultarAtencionesAgenteTool(),
+    "consultar_atenciones_agente_por_tramite": ConsultarAtencionesAgentePorTramiteTool(),
 }
 
 # --- API Endpoints ---
@@ -64,8 +72,5 @@ async def execute_tool(request: ToolExecutionRequest) -> ToolExecutionResponse:
     except Exception as e:
         # Catch any exception during tool execution and return a 500 error
         raise HTTPException(
-            status_code=500, detail=f"An error occurred while executing the tool: {e}"
-        )
-ption(
             status_code=500, detail=f"An error occurred while executing the tool: {e}"
         )
