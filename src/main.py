@@ -26,12 +26,13 @@ tools_registry = {
     "estado_ultima_solicitud_usuario": EstadoUltimaSolicitudUsuarioTool(),
     "conteo_estados_tramite_especifico": ConteoEstadosTramiteEspecificoTool(),
     "solicitudes_por_estado": SolicitudesPorEstadoTool(),
-    "list_available_reports": ListAvailableReportsTool(),
     "obtener_roles_usuario": ObtenerRolesUsuarioTool(),
     "listar_usuarios_por_rol": ListarUsuariosPorRolTool(),
     "consultar_atenciones_agente": ConsultarAtencionesAgenteTool(),
     "consultar_atenciones_agente_por_tramite": ConsultarAtencionesAgentePorTramiteTool(),
 }
+
+tools_registry["list_available_reports"] = ListAvailableReportsTool(tools_registry=tools_registry)
 
 # --- API Endpoints ---
 

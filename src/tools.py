@@ -6,6 +6,7 @@ from crewai.tools import BaseTool
 from dotenv import load_dotenv
 import inspect
 
+
 load_dotenv()
 
 def get_db_connection(model_type: str = None):
@@ -168,23 +169,25 @@ class ListAvailableReportsInput(BaseModel):
     """Input for list_available_reports tool."""
     pass
 
-import inspect
 
 class ListAvailableReportsTool(BaseTool):
     name: str = "list_available_reports"
     description: str = "Útil para cuando el usuario pregunta qué reportes, trámites o 'tramites' conoces o puedes hacer."
     args_schema: Type[BaseModel] = ListAvailableReportsInput
+    tools_registry: dict = {} # Añade este atributo
 
     def _run(self) -> str:
-        tool_classes = [cls for name, cls in inspect.getmembers(inspect.getmodule(self)) if inspect.isclass(cls) and issubclass(cls, BaseTool) and cls is not ListAvailableReportsTool and cls is not BaseTool]
-
-        if not tool_classes:
+        # Ahora usamos el registro que le pasamos, es 100% fiable
+        if not self.tools_registry:
             return "No hay reportes disponibles."
 
-        report_list = "\nAvailable reports:\n"
-        for i, tool_class in enumerate(tool_classes, 1):
-            report_list += f"{i}. {tool_class.name}: {tool_class.description}\n"
-        
+        report_list = "Puedo responder a los siguientes reportes:\n"
+        for i, tool_name in enumerate(self.tools_registry.keys(), 1):
+            if tool_name == self.name: # Evita listarse a sí misma
+                continue
+            tool = self.tools_registry[tool_name]
+            report_list += f"- {tool.name}: {tool.description}\n"
+
         return report_list
 
 class ObtenerRolesUsuarioInput(BaseModel):
