@@ -169,27 +169,25 @@ class ListAvailableReportsInput(BaseModel):
     """Input for list_available_reports tool."""
     pass
 
-
 class ListAvailableReportsTool(BaseTool):
     name: str = "list_available_reports"
     description: str = "Útil para cuando el usuario pregunta qué reportes, trámites o 'tramites' conoces o puedes hacer."
     args_schema: Type[BaseModel] = ListAvailableReportsInput
-    tools_registry: dict = {} # Añade este atributo
+    tools_registry: dict = {} # Atributo para recibir las herramientas
 
     def _run(self) -> str:
-        # Ahora usamos el registro que le pasamos, es 100% fiable
         if not self.tools_registry:
             return "No hay reportes disponibles."
 
-        report_list = "Puedo responder a los siguientes reportes:\n"
-        for i, tool_name in enumerate(self.tools_registry.keys(), 1):
-            if tool_name == self.name: # Evita listarse a sí misma
+        report_list = "Puedo ayudarte con los siguientes reportes:\n"
+        # Itera sobre el diccionario que le pasamos, es más seguro
+        for tool_name, tool in self.tools_registry.items():
+            if tool_name == self.name: # No se lista a sí misma
                 continue
-            tool = self.tools_registry[tool_name]
             report_list += f"- {tool.name}: {tool.description}\n"
-
+        
         return report_list
-
+        
 class ObtenerRolesUsuarioInput(BaseModel):
     """Input para la herramienta obtener_roles_usuario."""
     dni_usuario: str = Field(..., description="DNI del usuario a consultar.")
