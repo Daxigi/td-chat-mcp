@@ -2,7 +2,7 @@ import os
 import mysql.connector
 from typing import Type
 from pydantic import BaseModel, Field
-from crewai.tools import BaseTool
+from crewai.tools.base_tool import BaseTool
 from dotenv import load_dotenv
 import inspect
 
