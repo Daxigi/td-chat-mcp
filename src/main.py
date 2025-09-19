@@ -70,7 +70,7 @@ async def execute_tool(request: ToolExecutionRequest) -> ToolExecutionResponse:
     try:
         print(f"Using Tool: {request.tool_name}")  # Imprimimos para confirmar
         print(f"Arguments: {request.args}")  # AGREGADO: Debug de argumentos
-        result = tool.run(request.args)
+        result = tool.run(**request.args)
         return ToolExecutionResponse(result=str(result))
     except Exception as e:
         print("--- AN ERROR OCCURRED ---")
