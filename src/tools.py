@@ -165,24 +165,29 @@ class SolicitudesPorEstadoTool(BaseTool):
         except Exception as e:
             return f"Error executing query: {e}"
 
+# CORRECCIÓN 1: Input vacío pero válido
 class ListAvailableReportsInput(BaseModel):
     """Input for list_available_reports tool."""
-    pass
+    # No hay campos requeridos, pero el modelo debe existir
 
+# CORRECCIÓN 2: Herramienta corregida
 class ListAvailableReportsTool(BaseTool):
     name: str = "list_available_reports"
     description: str = "Útil para cuando el usuario pregunta qué reportes, trámites o 'tramites' conoces o puedes hacer."
     args_schema: Type[BaseModel] = ListAvailableReportsInput
-    tools_registry: dict = {} # Atributo para recibir las herramientas
 
-    def _run(self, **kwargs) -> str:
-        if not self.tools_registry:
+    def __init__(self, tools_registry: dict = None):
+        """Inicializar la herramienta con el registro de herramientas"""
+        super().__init__()
+        self._tools_registry = tools_registry or {}
+
+    def _run(self) -> str:  # CORRECCIÓN 3: Sin parámetros ya que no los necesita
+        if not self._tools_registry:
             return "No hay reportes disponibles."
 
         report_list = "Puedo ayudarte con los siguientes reportes:\n"
-        # Itera sobre el diccionario que le pasamos, es más seguro
-        for tool_name, tool in self.tools_registry.items():
-            if tool_name == self.name: # No se lista a sí misma
+        for tool_name, tool in self._tools_registry.items():
+            if tool_name == self.name:  # No se lista a sí misma
                 continue
             report_list += f"- {tool.name}: {tool.description}\n"
         

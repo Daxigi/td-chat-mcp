@@ -21,7 +21,7 @@ app = FastAPI(
 )
 
 # --- Tool Registry ---
-# Instantiate and register all available tools
+# CORRECCIÓN: Crear primero el registry sin list_available_reports
 tools_registry = {
     "estado_ultima_solicitud_usuario": EstadoUltimaSolicitudUsuarioTool(),
     "conteo_estados_tramite_especifico": ConteoEstadosTramiteEspecificoTool(),
@@ -32,6 +32,7 @@ tools_registry = {
     "consultar_atenciones_agente_por_tramite": ConsultarAtencionesAgentePorTramiteTool(),
 }
 
+# CORRECCIÓN: Luego añadir list_available_reports con el registry completo
 tools_registry["list_available_reports"] = ListAvailableReportsTool(tools_registry=tools_registry)
 
 # --- API Endpoints ---
@@ -67,11 +68,15 @@ async def execute_tool(request: ToolExecutionRequest) -> ToolExecutionResponse:
         )
 
     try:
-        print(f"Using Tool: {request.tool_name}") # Imprimimos para confirmar
+        print(f"Using Tool: {request.tool_name}")  # Imprimimos para confirmar
+        print(f"Arguments: {request.args}")  # AGREGADO: Debug de argumentos
         result = tool.run(request.args)
         return ToolExecutionResponse(result=str(result))
     except Exception as e:
         print("--- AN ERROR OCCURRED ---")
+        print(f"Tool: {request.tool_name}")
+        print(f"Args: {request.args}")
+        print(f"Error: {str(e)}")
         traceback.print_exc()
         print("-------------------------")
         raise HTTPException(
