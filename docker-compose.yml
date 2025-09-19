@@ -1,10 +1,16 @@
-version: '3.8'
-
 services:
-  mcp-server:
+  app: # Cambiado de 'mcp-server' a 'app' para consistencia
     build: .
+    image: mcp-server # Nombre de la imagen que construyes
+    container_name: mcp-container # ¡Nombre fijo y crucial!
     ports:
-      - "8876:8876"
+      - "8876:8765" # Expone el puerto 8876 de tu VPS al 8765 del contenedor
     env_file:
       - .env
     restart: always
+    networks: # ¡Sección añadida!
+      - shared-network
+
+networks: # ¡Sección añadida!
+  shared-network:
+    external: true
