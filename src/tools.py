@@ -175,7 +175,7 @@ class ListAvailableReportsTool(BaseTool):
     args_schema: Type[BaseModel] = ListAvailableReportsInput
     tools_registry: dict = {} # Atributo para recibir las herramientas
 
-    def _run(self) -> str:
+    def _run(self, **kwargs) -> str:
         if not self.tools_registry:
             return "No hay reportes disponibles."
 
