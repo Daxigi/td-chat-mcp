@@ -1,6 +1,6 @@
 
 # 1. Base Image
-FROM python:3.9-slim
+FROM python:3.12-slim
 
 # 2. Set up Environment
 WORKDIR /app
