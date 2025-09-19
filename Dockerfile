@@ -18,7 +18,7 @@ RUN poetry install --no-root
 COPY src/ ./src/
 
 # 6. Expose Port
-EXPOSE 8000
+EXPOSE 8876
 
 # 7. Run Command
-CMD ["poetry", "run", "uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["poetry", "run", "uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8876"]
