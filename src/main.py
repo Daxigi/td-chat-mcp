@@ -1,6 +1,6 @@
 from fastapi import FastAPI, HTTPException
 from typing import List
-
+import traceback
 from .models import ToolExecutionRequest, ToolExecutionResponse
 from .tools import (
     EstadoUltimaSolicitudUsuarioTool,
@@ -67,11 +67,13 @@ async def execute_tool(request: ToolExecutionRequest) -> ToolExecutionResponse:
         )
 
     try:
-        # The `run` method of BaseTool handles Pydantic model validation and calls `_run`
+        print(f"Using Tool: {request.tool_name}") # Imprimimos para confirmar
         result = tool.run(request.args)
         return ToolExecutionResponse(result=str(result))
     except Exception as e:
-        # Catch any exception during tool execution and return a 500 error
+        print("--- AN ERROR OCCURRED ---")
+        traceback.print_exc()
+        print("-------------------------")
         raise HTTPException(
             status_code=500, detail=f"An error occurred while executing the tool: {e}"
         )
