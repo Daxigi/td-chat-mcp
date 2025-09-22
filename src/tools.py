@@ -246,36 +246,43 @@ class ListarUsuariosPorRolTool(BaseTool):
     args_schema: Type[BaseModel] = ListarUsuariosPorRolInput
 
     def _run(self, nombre_rol: str) -> str:
+        # Consulta SQL con el modelo como parámetro para mayor seguridad y compatibilidad.
         query = """
-            SELECT 
-                u.name, 
+            SELECT
+                u.name,
                 u.dni
             FROM users u
-            JOIN model_has_roles mhr 
+            JOIN model_has_roles mhr
                 ON u.id = mhr.model_id
-               AND mhr.model_type = 'App\\Models\\User'
+               AND mhr.model_type = %(model_type)s
             JOIN roles r
                 ON r.id = mhr.role_id
             WHERE r.name = %(nombre_rol)s;
         """
+        # Parámetros para la consulta.
+        params = {
+            'nombre_rol': nombre_rol,
+            'model_type': 'App\\Models\\User'
+        }
         try:
             conn = get_db_connection()
             cursor = conn.cursor(dictionary=True)
-            cursor.execute(query, {'nombre_rol': nombre_rol})
+            # Pasamos la consulta y los parámetros por separado.
+            cursor.execute(query, params)
             result = cursor.fetchall()
             conn.close()
-            
+
             if not result:
                 return f"No se encontraron usuarios con el rol '{nombre_rol}' en la base de datos."
-            
+
             usuarios_info = []
             for row in result:
                 usuarios_info.append(f"Nombre: {row['name']}, DNI: {row['dni']}")
-                
+
             return f"Usuarios encontrados con el rol '{nombre_rol}':\n" + "\n".join(usuarios_info)
         except Exception as e:
             return f"Error al ejecutar la consulta: {e}"
-
+            
 class ConsultarAtencionesAgenteInput(BaseModel):
     """Input para la herramienta ConsultarAtencionesAgenteTool."""
     dni_agente: str = Field(..., description="El número de DNI del agente a consultar")
