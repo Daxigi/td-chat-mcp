@@ -3,6 +3,7 @@ from typing import List
 import traceback
 from .models import ToolExecutionRequest, ToolExecutionResponse
 from .tools import (
+    EstadoSolicitudPorIdTool,
     EstadoUltimaSolicitudUsuarioTool,
     ConteoEstadosTramiteEspecificoTool,
     SolicitudesPorEstadoTool,
@@ -23,6 +24,7 @@ app = FastAPI(
 # --- Tool Registry ---
 # CORRECCIÓN: Crear primero el registry sin list_available_reports
 tools_registry = {
+    "estado_solicitud_por_id": EstadoSolicitudPorIdTool(),
     "estado_ultima_solicitud_usuario": EstadoUltimaSolicitudUsuarioTool(),
     "conteo_estados_tramite_especifico": ConteoEstadosTramiteEspecificoTool(),
     "solicitudes_por_estado": SolicitudesPorEstadoTool(),

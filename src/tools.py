@@ -16,6 +16,63 @@ def get_db_connection():
         database=os.getenv("DB_DATABASE")
     )
 
+class EstadoSolicitudPorIdInput(BaseModel):
+    """Input for estado_solicitud_por_id tool."""
+    request_id: int = Field(..., description="el ID de la solicitud a consultar")
+
+class EstadoSolicitudPorIdTool(BaseTool):
+    name: str = "estado_solicitud_por_id"
+    description: str = "Consulta el estado y detalles de una solicitud específica usando su ID."
+    args_schema: Type[BaseModel] = EstadoSolicitudPorIdInput
+
+    def _run(self, request_id: int) -> str:
+        query = """
+            SELECT
+                r.id AS id_solicitud,
+                u.name AS usuario,
+                u.dni AS dni_usuario,
+                p.name AS tramite,
+                r.start_date AS fecha_inicio,
+                r.finish_date AS fecha_fin,
+                rs.description AS estado_actual,
+                a.description AS ultima_accion,
+                ra.created_at AS fecha_accion
+            FROM requests r
+            JOIN users u ON r.user_id = u.id
+            JOIN procedures p ON r.procedure_id = p.id
+            JOIN (
+                SELECT rsr1.* FROM request_state_records rsr1
+                JOIN (
+                    SELECT request_id, MAX(date) AS max_date
+                    FROM request_state_records GROUP BY request_id
+                ) latest ON rsr1.request_id = latest.request_id AND rsr1.date = latest.max_date
+            ) rsr ON rsr.request_id = r.id
+            JOIN request_states rs ON rs.id = rsr.request_status_id
+            LEFT JOIN (
+                SELECT ra1.* FROM request_actions ra1
+                JOIN (
+                    SELECT request_id, MAX(created_at) AS max_date
+                    FROM request_actions GROUP BY request_id
+                ) latest_ra ON ra1.request_id = latest_ra.request_id AND ra1.created_at = latest_ra.max_date
+            ) ra ON ra.request_id = r.id
+            LEFT JOIN actions a ON a.id = ra.action_id
+            WHERE r.id = %(request_id)s
+              AND r.deleted_at IS NULL;
+        """
+        try:
+            conn = get_db_connection()
+            cursor = conn.cursor(dictionary=True)
+            cursor.execute(query, {'request_id': request_id})
+            result = cursor.fetchall()
+            conn.close()
+
+            if not result:
+                return f"No se encontró ninguna solicitud con ID: {request_id}"
+
+            return str(result)
+        except Exception as e:
+            return f"Error executing query: {e}"
+
 class EstadoUltimaSolicitudUsuarioInput(BaseModel):
     """Input for estado_ultima_solicitud_usuario tool."""
     dni_usuario: str = Field(..., description="el número de DNI del usuario a consultar")
@@ -171,18 +228,25 @@ class ListAvailableReportsTool(BaseTool):
     name: str = "list_available_reports"
     description: str = "Útil para cuando el usuario pregunta qué reportes, trámites o 'tramites' conoces o puedes hacer."
     args_schema: Type[BaseModel] = ListAvailableReportsInput
+    tools_registry: dict = {}
+
+    def __init__(self, tools_registry: dict = None):
+        super().__init__()
+        if tools_registry:
+            self.tools_registry = tools_registry
 
     def _run(self) -> str:
-        return """
-        Available reports:
-        1. estado_ultima_solicitud_usuario: Consulta el estado de la última solicitud de un trámite para un usuario (DNI).
-        2. conteo_estados_tramite_especifico: Cuenta las solicitudes y sus estados para un trámite y rango de fechas.
-        3. solicitudes_por_estado: Cuenta las solicitudes y sus estados para todos los trámites en un rango de fechas.
-        4. obtener_roles_usuario: Obtiene los roles asociados a un usuario a través de su DNI.
-        5. listar_agentes: Lista a todos los usuarios que tienen el rol de 'agente'.
-        6. consultar_atenciones_agente: Consulta la cantidad de atenciones (cambios de estado) realizadas por un agente, por tipo de trámite y estado, en un periodo de tiempo específico.
-        7. consultar_atenciones_agente_por_tramite: Consulta la cantidad de atenciones (cambios de estado) realizadas por un agente, para un tipo de trámite específico y en un periodo de tiempo.
-        """
+        if not self.tools_registry:
+            return "No hay herramientas disponibles en el registro."
+
+        output = "Available reports:\n"
+        for idx, (tool_name, tool_instance) in enumerate(self.tools_registry.items(), start=1):
+            # Excluir la propia herramienta list_available_reports de la lista
+            if tool_name == "list_available_reports":
+                continue
+            output += f"{idx}. {tool_name}: {tool_instance.description}\n"
+
+        return output
 
 class ObtenerRolesUsuarioInput(BaseModel):
     """Input para la herramienta obtener_roles_usuario."""
