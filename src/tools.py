@@ -481,3 +481,74 @@ class ConsultarAtencionesAgentePorTramiteTool(BaseTool):
             return output
         except Exception as e:
             return f"Error al ejecutar la consulta: {e}"
+
+class ListarSolicitudesPorDniInput(BaseModel):
+    """Input para la herramienta ListarSolicitudesPorDniTool."""
+    dni_usuario: str = Field(..., description="el número de DNI del usuario a consultar")
+
+class ListarSolicitudesPorDniTool(BaseTool):
+    name: str = "listar_solicitudes_por_dni"
+    description: str = "Lista todas las solicitudes realizadas por un usuario específico usando su DNI. Muestra información detallada de cada solicitud incluyendo ID, trámite, fechas, estado actual y última acción."
+    args_schema: Type[BaseModel] = ListarSolicitudesPorDniInput
+
+    def _run(self, dni_usuario: str) -> str:
+        query = """
+            SELECT
+                r.id AS id_solicitud,
+                u.name AS usuario,
+                u.dni AS dni_usuario,
+                p.name AS tramite,
+                r.start_date AS fecha_inicio,
+                r.finish_date AS fecha_fin,
+                rs.description AS estado_actual,
+                a.description AS ultima_accion,
+                ra.created_at AS fecha_accion
+            FROM requests r
+            JOIN users u ON r.user_id = u.id
+            JOIN procedures p ON r.procedure_id = p.id
+            JOIN (
+                SELECT rsr1.* FROM request_state_records rsr1
+                JOIN (
+                    SELECT request_id, MAX(date) AS max_date
+                    FROM request_state_records GROUP BY request_id
+                ) latest ON rsr1.request_id = latest.request_id AND rsr1.date = latest.max_date
+            ) rsr ON rsr.request_id = r.id
+            JOIN request_states rs ON rs.id = rsr.request_status_id
+            LEFT JOIN (
+                SELECT ra1.* FROM request_actions ra1
+                JOIN (
+                    SELECT request_id, MAX(created_at) AS max_date
+                    FROM request_actions GROUP BY request_id
+                ) latest_ra ON ra1.request_id = latest_ra.request_id AND ra1.created_at = latest_ra.max_date
+            ) ra ON ra.request_id = r.id
+            LEFT JOIN actions a ON a.id = ra.action_id
+            WHERE u.dni = %(dni_usuario)s
+              AND r.deleted_at IS NULL
+            ORDER BY r.created_at DESC;
+        """
+        try:
+            conn = get_db_connection()
+            cursor = conn.cursor(dictionary=True)
+            cursor.execute(query, {'dni_usuario': dni_usuario})
+            result = cursor.fetchall()
+            conn.close()
+
+            if not result:
+                return f"No se encontraron solicitudes para el usuario con DNI: {dni_usuario}"
+
+            output = f"Solicitudes encontradas para el DNI {dni_usuario} ({result[0]['usuario']}):\n\n"
+            for idx, solicitud in enumerate(result, start=1):
+                output += f"{idx}. ID Solicitud: {solicitud['id_solicitud']}\n"
+                output += f"   Trámite: {solicitud['tramite']}\n"
+                output += f"   Estado actual: {solicitud['estado_actual']}\n"
+                output += f"   Fecha inicio: {solicitud['fecha_inicio']}\n"
+                if solicitud['fecha_fin']:
+                    output += f"   Fecha fin: {solicitud['fecha_fin']}\n"
+                if solicitud['ultima_accion']:
+                    output += f"   Última acción: {solicitud['ultima_accion']} ({solicitud['fecha_accion']})\n"
+                output += "\n"
+
+            output += f"Total de solicitudes: {len(result)}"
+            return output
+        except Exception as e:
+            return f"Error al ejecutar la consulta: {e}"
