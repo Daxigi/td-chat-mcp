@@ -13,6 +13,8 @@ from .tools import (
     ConsultarAtencionesAgenteTool,
     ConsultarAtencionesAgentePorTramiteTool,
     ListarSolicitudesPorDniTool,
+    ConsultarMensajesSolicitudTool,
+    SolicitudesTramiteHoyTool,
 )
 
 # --- App Initialization ---
@@ -34,6 +36,8 @@ tools_registry = {
     "consultar_atenciones_agente": ConsultarAtencionesAgenteTool(),
     "consultar_atenciones_agente_por_tramite": ConsultarAtencionesAgentePorTramiteTool(),
     "listar_solicitudes_por_dni": ListarSolicitudesPorDniTool(),
+    "consultar_mensajes_solicitud": ConsultarMensajesSolicitudTool(),
+    "solicitudes_tramite_hoy": SolicitudesTramiteHoyTool(),
 }
 
 # CORRECCIÓN: Luego añadir list_available_reports con el registry completo

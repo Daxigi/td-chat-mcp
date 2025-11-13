@@ -552,3 +552,164 @@ class ListarSolicitudesPorDniTool(BaseTool):
             return output
         except Exception as e:
             return f"Error al ejecutar la consulta: {e}"
+
+class ConsultarMensajesSolicitudInput(BaseModel):
+    """Input para la herramienta ConsultarMensajesSolicitudTool."""
+    request_id: int = Field(..., description="el ID de la solicitud para consultar sus mensajes")
+
+class ConsultarMensajesSolicitudTool(BaseTool):
+    name: str = "consultar_mensajes_solicitud"
+    description: str = "Consulta todos los mensajes de la conversación asociada a una solicitud específica. Muestra el historial completo de mensajes ordenados cronológicamente."
+    args_schema: Type[BaseModel] = ConsultarMensajesSolicitudInput
+
+    def _run(self, request_id: int) -> str:
+        query = """
+            SELECT 
+                m.id AS mensaje_id,
+                m.tittle AS titulo,
+                m.content AS contenido,
+                m.emisor_id,
+                ue.name AS nombre_emisor,
+                m.receptor_id,
+                ur.name AS nombre_receptor,
+                m.readd AS leido,
+                m.send AS enviado,
+                m.conversation_id,
+                m.created_at AS fecha_creacion,
+                m.current_role AS rol_actual
+            FROM messages m
+            LEFT JOIN users ue ON m.emisor_id = ue.id
+            LEFT JOIN users ur ON m.receptor_id = ur.id
+            WHERE m.conversation_id = (
+                SELECT conversation_id 
+                FROM messages 
+                WHERE request_id = %(request_id)s 
+                LIMIT 1
+            )
+            ORDER BY m.created_at ASC;
+        """
+        try:
+            conn = get_db_connection()
+            cursor = conn.cursor(dictionary=True)
+            cursor.execute(query, {'request_id': request_id})
+            result = cursor.fetchall()
+            conn.close()
+
+            if not result:
+                return f"No se encontraron mensajes para la solicitud con ID: {request_id}"
+
+            conversation_id = result[0]['conversation_id']
+            output = f"Mensajes de la conversación ID {conversation_id} (Solicitud #{request_id}):\n"
+            output += "=" * 70 + "\n\n"
+
+            for idx, mensaje in enumerate(result, start=1):
+                output += f"Mensaje #{idx} (ID: {mensaje['mensaje_id']})\n"
+                output += f"Fecha: {mensaje['fecha_creacion']}\n"
+                output += f"De: {mensaje['nombre_emisor'] or 'Usuario ' + str(mensaje['emisor_id'])}\n"
+                output += f"Para: {mensaje['nombre_receptor'] or 'Usuario ' + str(mensaje['receptor_id'])}\n"
+                
+                if mensaje['titulo']:
+                    output += f"Título: {mensaje['titulo']}\n"
+                
+                output += f"Contenido: {mensaje['contenido']}\n"
+                output += f"Estado: {'Leído' if mensaje['leido'] else 'No leído'} | {'Enviado' if mensaje['enviado'] else 'No enviado'}\n"
+                
+                if mensaje['rol_actual']:
+                    output += f"Rol: {mensaje['rol_actual']}\n"
+                
+                output += "-" * 70 + "\n\n"
+
+            output += f"Total de mensajes: {len(result)}"
+            return output
+        except Exception as e:
+            return f"Error al ejecutar la consulta: {e}"
+
+class SolicitudesTramiteHoyInput(BaseModel):
+    """Input para la herramienta SolicitudesTramiteHoyTool."""
+    class Config:
+        extra = 'forbid'
+
+class SolicitudesTramiteHoyTool(BaseTool):
+    name: str = "solicitudes_tramite_hoy"
+    description: str = "Consulta todas las solicitudes creadas el día de hoy de todos los trámites, agrupadas por trámite y estado. Muestra información completa de cada solicitud incluyendo usuario, fechas y última acción. No requiere parámetros."
+    args_schema: Type[BaseModel] = SolicitudesTramiteHoyInput
+
+    def _run(self, **kwargs) -> str:
+        query = """
+            SELECT
+                p.name AS tramite,
+                rs.description AS estado,
+                COUNT(*) AS cantidad
+            FROM requests r
+            JOIN procedures p ON r.procedure_id = p.id
+            JOIN (
+                SELECT rsr1.* FROM request_state_records rsr1
+                JOIN (
+                    SELECT request_id, MAX(date) AS max_date
+                    FROM request_state_records GROUP BY request_id
+                ) latest ON rsr1.request_id = latest.request_id AND rsr1.date = latest.max_date
+            ) rsr ON rsr.request_id = r.id
+            JOIN request_states rs ON rs.id = rsr.request_status_id
+            WHERE DATE(r.start_date) = CURDATE()
+              AND r.deleted_at IS NULL
+            GROUP BY p.name, rs.description
+            ORDER BY p.name, rs.description;
+        """
+        try:
+            conn = get_db_connection()
+            cursor = conn.cursor(dictionary=True)
+            cursor.execute(query)
+            result = cursor.fetchall()
+            conn.close()
+
+            if not result:
+                return "No se encontraron solicitudes creadas hoy."
+
+            # Agrupar por trámite
+            solicitudes_por_tramite = {}
+            total_general = 0
+            
+            for row in result:
+                tramite = row['tramite']
+                estado = row['estado']
+                cantidad = row['cantidad']
+                total_general += cantidad
+                
+                if tramite not in solicitudes_por_tramite:
+                    solicitudes_por_tramite[tramite] = {}
+                
+                solicitudes_por_tramite[tramite][estado] = cantidad
+
+            # Construir el output
+            from datetime import date
+            fecha_hoy = date.today().strftime('%d/%m/%Y')
+            output = f"REPORTE DE SOLICITUDES DEL DIA - {fecha_hoy}\n\n"
+
+            # Mostrar por trámite
+            for tramite in sorted(solicitudes_por_tramite.keys()):
+                estados = solicitudes_por_tramite[tramite]
+                total_tramite = sum(estados.values())
+                
+                output += f"Tramite: {tramite}\n"
+                for estado in sorted(estados.keys()):
+                    cantidad = estados[estado]
+                    output += f"  {estado} : {cantidad}\n"
+                output += f"  Total: {total_tramite}\n\n"
+
+            # Resumen general
+            output += f"RESUMEN GENERAL: {total_general} solicitudes creadas hoy\n\n"
+            
+            # # Distribución por trámite
+            # output += "DISTRIBUCION POR TRAMITE:\n"
+            # for tramite in sorted(solicitudes_por_tramite.keys()):
+            #     total_tramite = sum(solicitudes_por_tramite[tramite].values())
+            #     porcentaje = (total_tramite / total_general) * 100
+            #     output += f"  {tramite}: {total_tramite} ({porcentaje:.1f}%)\n"
+                
+            #     # Desglose por estado
+            #     for estado, cantidad in sorted(solicitudes_por_tramite[tramite].items()):
+            #         output += f"    - {estado}: {cantidad}\n"
+
+            return output
+        except Exception as e:
+            return f"Error al ejecutar la consulta: {e}"
