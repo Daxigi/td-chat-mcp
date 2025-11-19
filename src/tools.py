@@ -142,7 +142,7 @@ class ConteoEstadosTramiteEspecificoInput(BaseModel):
 
 class ConteoEstadosTramiteEspecificoTool(BaseTool):
     name: str = "conteo_estados_tramite_especifico"
-    description: str = "Cuenta las solicitudes y sus estados para un trámite y rango de fechas."
+    description: str = "Utiliza esta herramienta para contar solicitudes de un trámite entre una fecha de inicio y una fecha de fin específicas. No la uses para consultas sobre 'hoy', para eso existe 'solicitudes_tramite_hoy'."
     args_schema: Type[BaseModel] = ConteoEstadosTramiteEspecificoInput
 
     def _run(self, nombre_tramite: str, fecha_inicio: str, fecha_fin: str) -> str:
@@ -626,90 +626,100 @@ class ConsultarMensajesSolicitudTool(BaseTool):
 
 class SolicitudesTramiteHoyInput(BaseModel):
     """Input para la herramienta SolicitudesTramiteHoyTool."""
-    class Config:
-        extra = 'forbid'
+    nombre_tramite: str = Field(..., description="el nombre exacto del trámite que se desea consultar")
 
 class SolicitudesTramiteHoyTool(BaseTool):
     name: str = "solicitudes_tramite_hoy"
-    description: str = "Consulta todas las solicitudes creadas el día de hoy de todos los trámites, agrupadas por trámite y estado. Muestra información completa de cada solicitud incluyendo usuario, fechas y última acción. No requiere parámetros."
+    description: str = "Utiliza esta herramienta para obtener el número de solicitudes de un trámite específico realizadas hoy. Para obtener un resumen de todos los trámites, usa 'todos los trámites' como nombre del trámite."
     args_schema: Type[BaseModel] = SolicitudesTramiteHoyInput
 
-    def _run(self, **kwargs) -> str:
-        query = """
-            SELECT
-                p.name AS tramite,
-                rs.description AS estado,
-                COUNT(*) AS cantidad
-            FROM requests r
-            JOIN procedures p ON r.procedure_id = p.id
-            JOIN (
-                SELECT rsr1.* FROM request_state_records rsr1
+    def _run(self, nombre_tramite: str) -> str:
+        if nombre_tramite.lower() == 'todos los trámites':
+            query = """
+                SELECT
+                    p.name AS tramite,
+                    rs.description AS estado,
+                    COUNT(*) AS cantidad
+                FROM requests r
+                JOIN procedures p ON r.procedure_id = p.id
                 JOIN (
-                    SELECT request_id, MAX(date) AS max_date
-                    FROM request_state_records GROUP BY request_id
-                ) latest ON rsr1.request_id = latest.request_id AND rsr1.date = latest.max_date
-            ) rsr ON rsr.request_id = r.id
-            JOIN request_states rs ON rs.id = rsr.request_status_id
-            WHERE DATE(r.start_date) = CURDATE()
-              AND r.deleted_at IS NULL
-            GROUP BY p.name, rs.description
-            ORDER BY p.name, rs.description;
-        """
-        try:
-            conn = get_db_connection()
-            cursor = conn.cursor(dictionary=True)
-            cursor.execute(query)
-            result = cursor.fetchall()
-            conn.close()
+                    SELECT rsr1.* FROM request_state_records rsr1
+                    JOIN (
+                        SELECT request_id, MAX(date) AS max_date
+                        FROM request_state_records GROUP BY request_id
+                    ) latest ON rsr1.request_id = latest.request_id AND rsr1.date = latest.max_date
+                ) rsr ON rsr.request_id = r.id
+                JOIN request_states rs ON rs.id = rsr.request_status_id
+                WHERE DATE(r.start_date) = CURDATE()
+                  AND r.deleted_at IS NULL
+                GROUP BY p.name, rs.description
+                ORDER BY p.name, rs.description;
+            """
+            try:
+                conn = get_db_connection()
+                cursor = conn.cursor(dictionary=True)
+                cursor.execute(query)
+                result = cursor.fetchall()
+                conn.close()
 
-            if not result:
-                return "No se encontraron solicitudes creadas hoy."
+                if not result:
+                    return "No se encontraron solicitudes creadas hoy."
 
-            # Agrupar por trámite
-            solicitudes_por_tramite = {}
-            total_general = 0
-            
-            for row in result:
-                tramite = row['tramite']
-                estado = row['estado']
-                cantidad = row['cantidad']
-                total_general += cantidad
+                solicitudes_por_tramite = {}
+                total_general = 0
                 
-                if tramite not in solicitudes_por_tramite:
-                    solicitudes_por_tramite[tramite] = {}
+                for row in result:
+                    tramite = row['tramite']
+                    estado = row['estado']
+                    cantidad = row['cantidad']
+                    total_general += cantidad
+                    
+                    if tramite not in solicitudes_por_tramite:
+                        solicitudes_por_tramite[tramite] = {}
+                    
+                    solicitudes_por_tramite[tramite][estado] = cantidad
+
+                from datetime import date
+                fecha_hoy = date.today().strftime('%d/%m/%Y')
+                output = f"REPORTE DE SOLICITUDES DEL DIA - {fecha_hoy}\n\n"
+
+                for tramite in sorted(solicitudes_por_tramite.keys()):
+                    estados = solicitudes_por_tramite[tramite]
+                    total_tramite = sum(estados.values())
+                    
+                    output += f"Tramite: {tramite}\n"
+                    for estado in sorted(estados.keys()):
+                        cantidad = estados[estado]
+                        output += f"  {estado} : {cantidad}\n"
+                    output += f"  Total: {total_tramite}\n\n"
+
+                output += f"RESUMEN GENERAL: {total_general} solicitudes creadas hoy\n\n"
                 
-                solicitudes_por_tramite[tramite][estado] = cantidad
+                return output
+            except Exception as e:
+                return f"Error al ejecutar la consulta: {e}"
+        else:
+            query = """
+                SELECT
+                    COUNT(*) AS total
+                FROM requests r
+                JOIN procedures p ON r.procedure_id = p.id
+                WHERE DATE(r.start_date) = CURDATE()
+                  AND p.name = %(nombre_tramite)s
+                  AND r.deleted_at IS NULL;
+            """
+            try:
+                conn = get_db_connection()
+                cursor = conn.cursor(dictionary=True)
+                cursor.execute(query, {'nombre_tramite': nombre_tramite})
+                result = cursor.fetchone()
+                conn.close()
 
-            # Construir el output
-            from datetime import date
-            fecha_hoy = date.today().strftime('%d/%m/%Y')
-            output = f"REPORTE DE SOLICITUDES DEL DIA - {fecha_hoy}\n\n"
-
-            # Mostrar por trámite
-            for tramite in sorted(solicitudes_por_tramite.keys()):
-                estados = solicitudes_por_tramite[tramite]
-                total_tramite = sum(estados.values())
+                if not result or result['total'] == 0:
+                    return f"No se encontraron solicitudes para el trámite '{nombre_tramite}' creadas hoy."
                 
-                output += f"Tramite: {tramite}\n"
-                for estado in sorted(estados.keys()):
-                    cantidad = estados[estado]
-                    output += f"  {estado} : {cantidad}\n"
-                output += f"  Total: {total_tramite}\n\n"
+                total = result['total']
+                return f"Hoy se crearon un total de {total} solicitudes para el trámite '{nombre_tramite}'."
 
-            # Resumen general
-            output += f"RESUMEN GENERAL: {total_general} solicitudes creadas hoy\n\n"
-            
-            # # Distribución por trámite
-            # output += "DISTRIBUCION POR TRAMITE:\n"
-            # for tramite in sorted(solicitudes_por_tramite.keys()):
-            #     total_tramite = sum(solicitudes_por_tramite[tramite].values())
-            #     porcentaje = (total_tramite / total_general) * 100
-            #     output += f"  {tramite}: {total_tramite} ({porcentaje:.1f}%)\n"
-                
-            #     # Desglose por estado
-            #     for estado, cantidad in sorted(solicitudes_por_tramite[tramite].items()):
-            #         output += f"    - {estado}: {cantidad}\n"
-
-            return output
-        except Exception as e:
-            return f"Error al ejecutar la consulta: {e}"
+            except Exception as e:
+                return f"Error al ejecutar la consulta: {e}"
