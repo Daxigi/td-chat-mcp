@@ -1,5 +1,5 @@
 services:
-  app: # Cambiado de 'mcp-server' a 'app' para consistencia
+  app:
     build: .
     image: mcp-server # Nombre de la imagen que construyes
     container_name: mcp-container # ¡Nombre fijo y crucial!
@@ -8,6 +8,8 @@ services:
     env_file:
       - .env
     restart: always
+    volumes:
+      - ./src:/app/src
     networks: # ¡Sección añadida!
       - shared-network
 

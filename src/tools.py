@@ -574,14 +574,14 @@ class ConsultarMensajesSolicitudTool(BaseTool):
                 ur.name AS nombre_receptor,
                 m.readd AS leido,
                 m.send AS enviado,
-                m.conversation_id,
+                m.request_id,
                 m.created_at AS fecha_creacion,
                 m.current_role AS rol_actual
             FROM messages m
             LEFT JOIN users ue ON m.emisor_id = ue.id
             LEFT JOIN users ur ON m.receptor_id = ur.id
-            WHERE m.conversation_id = (
-                SELECT conversation_id 
+            WHERE m.request_id = (
+                SELECT request_id 
                 FROM messages 
                 WHERE request_id = %(request_id)s 
                 LIMIT 1
@@ -598,8 +598,8 @@ class ConsultarMensajesSolicitudTool(BaseTool):
             if not result:
                 return f"No se encontraron mensajes para la solicitud con ID: {request_id}"
 
-            conversation_id = result[0]['conversation_id']
-            output = f"Mensajes de la conversación ID {conversation_id} (Solicitud #{request_id}):\n"
+            request_id = result[0]['request_id']
+            output = f"Mensajes de la conversación ID {request_id} (Solicitud #{request_id}):\n"
             output += "=" * 70 + "\n\n"
 
             for idx, mensaje in enumerate(result, start=1):
