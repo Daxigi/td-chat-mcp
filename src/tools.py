@@ -1,6 +1,7 @@
 import os
 import mysql.connector
 from typing import Type
+from collections import defaultdict
 from pydantic import BaseModel, Field
 from crewai.tools import BaseTool
 from dotenv import load_dotenv
@@ -278,7 +279,7 @@ class ObtenerRolesUsuarioTool(BaseTool):
         # Parámetros que se pasarán de forma segura a la consulta
         params = {
             'dni': dni_limpio,
-            'm_type': 'App\\Models\\User'
+            'm_type': r'App\Models\User'
         }
 
         try:
@@ -326,7 +327,7 @@ class ListarUsuariosPorRolTool(BaseTool):
         # Parámetros para la consulta.
         params = {
             'nombre_rol': nombre_rol,
-            'model_type': 'App\\Models\\User'
+            'model_type': r'App\Models\User'
         }
         try:
             conn = get_db_connection()
@@ -624,102 +625,77 @@ class ConsultarMensajesSolicitudTool(BaseTool):
         except Exception as e:
             return f"Error al ejecutar la consulta: {e}"
 
-class SolicitudesTramiteHoyInput(BaseModel):
-    """Input para la herramienta SolicitudesTramiteHoyTool."""
-    nombre_tramite: str = Field(..., description="el nombre exacto del trámite que se desea consultar")
+class ReporteSolicitudesHoyInput(BaseModel):
+    """Input for ReporteSolicitudesHoyTool."""
+    pass
 
-class SolicitudesTramiteHoyTool(BaseTool):
-    name: str = "solicitudes_tramite_hoy"
-    description: str = "Utiliza esta herramienta para obtener el número de solicitudes de un trámite específico realizadas hoy. Para obtener un resumen de todos los trámites, usa 'todos los trámites' como nombre del trámite."
-    args_schema: Type[BaseModel] = SolicitudesTramiteHoyInput
+class ReporteSolicitudesHoyTool(BaseTool):
+    name: str = "reporte_solicitudes_hoy"
+    description: str = "Genera una lista detallada y un resumen de todas las solicitudes creadas en el día de hoy, ordenadas por trámite con mayor cantidad de solicitudes."
+    args_schema: Type[BaseModel] = ReporteSolicitudesHoyInput
 
-    def _run(self, nombre_tramite: str) -> str:
-        if nombre_tramite.lower() == 'todos los trámites':
-            query = """
-                SELECT
-                    p.name AS tramite,
-                    rs.description AS estado,
-                    COUNT(*) AS cantidad
-                FROM requests r
-                JOIN procedures p ON r.procedure_id = p.id
+    def _run(self) -> str:
+        query = """
+            SELECT
+                r.id AS request_id,
+                p.name AS nombre_tramite,
+                CONCAT(u.name, ' ', u.surname) AS nombre_usuario,
+                rs.description AS estado_actual
+            FROM requests r
+            JOIN users u ON r.user_id = u.id
+            JOIN procedures p ON r.procedure_id = p.id
+            JOIN (
+                SELECT rsr1.* FROM request_state_records rsr1
                 JOIN (
-                    SELECT rsr1.* FROM request_state_records rsr1
-                    JOIN (
-                        SELECT request_id, MAX(date) AS max_date
-                        FROM request_state_records GROUP BY request_id
-                    ) latest ON rsr1.request_id = latest.request_id AND rsr1.date = latest.max_date
-                ) rsr ON rsr.request_id = r.id
-                JOIN request_states rs ON rs.id = rsr.request_status_id
-                WHERE DATE(r.start_date) = CURDATE()
-                  AND r.deleted_at IS NULL
-                GROUP BY p.name, rs.description
-                ORDER BY p.name, rs.description;
-            """
-            try:
-                conn = get_db_connection()
-                cursor = conn.cursor(dictionary=True)
-                cursor.execute(query)
-                result = cursor.fetchall()
-                conn.close()
+                    SELECT request_id, MAX(date) AS max_date
+                    FROM request_state_records GROUP BY request_id
+                ) latest ON rsr1.request_id = latest.request_id AND rsr1.date = latest.max_date
+            ) rsr ON rsr.request_id = r.id
+            JOIN request_states rs ON rs.id = rsr.request_status_id
+            WHERE DATE(r.start_date) = CURDATE()
+              AND r.deleted_at IS NULL
+            ORDER BY r.created_at ASC;
+        """
+        try:
+            conn = get_db_connection()
+            cursor = conn.cursor(dictionary=True)
+            cursor.execute(query)
+            result = cursor.fetchall()
+            conn.close()
 
-                if not result:
-                    return "No se encontraron solicitudes creadas hoy."
+            if not result:
+                return "No se encontraron solicitudes creadas hoy."
 
-                solicitudes_por_tramite = {}
-                total_general = 0
-                
-                for row in result:
-                    tramite = row['tramite']
-                    estado = row['estado']
-                    cantidad = row['cantidad']
-                    total_general += cantidad
-                    
-                    if tramite not in solicitudes_por_tramite:
-                        solicitudes_por_tramite[tramite] = {}
-                    
-                    solicitudes_por_tramite[tramite][estado] = cantidad
+            output_parts = ["Solicitudes de hoy:\n\n"]
+            summary_data = defaultdict(lambda: defaultdict(int))
 
-                from datetime import date
-                fecha_hoy = date.today().strftime('%d/%m/%Y')
-                output = f"REPORTE DE SOLICITUDES DEL DIA - {fecha_hoy}\n\n"
+            for idx, solicitud in enumerate(result, start=1):
+                # Detailed list entry
+                output_parts.append(
+                    f"{idx}. Solicitud de: \"{solicitud['nombre_tramite']}\"\n"
+                    f"   - Numero de la solicitud: \"{solicitud['request_id']}\"\n"
+                    f"   - Nombre del usuario: \"{solicitud['nombre_usuario']}\"\n"
+                    f"   - Estado: \"{solicitud['estado_actual']}\"\n\n"
+                )
+                # Update summary data
+                summary_data[solicitud['nombre_tramite']][solicitud['estado_actual']] += 1
 
-                for tramite in sorted(solicitudes_por_tramite.keys()):
-                    estados = solicitudes_por_tramite[tramite]
-                    total_tramite = sum(estados.values())
-                    
-                    output += f"Tramite: {tramite}\n"
-                    for estado in sorted(estados.keys()):
-                        cantidad = estados[estado]
-                        output += f"  {estado} : {cantidad}\n"
-                    output += f"  Total: {total_tramite}\n\n"
+            # Summary section
+            output_parts.append("="*40 + "\n\n")
+            output_parts.append("Resumen por Trámite y Estado:\n\n")
+            
+            if not summary_data:
+                output_parts.append("No hay solicitudes para resumir.\n")
+            else:
+                for tramite, states_counter in summary_data.items():
+                    output_parts.append(f"Trámite: {tramite}\n")
+                    total_tramite = 0
+                    for estado, count in states_counter.items():
+                        output_parts.append(f"  - {estado}: {count}\n")
+                        total_tramite += count
+                    output_parts.append(f"  Total para este trámite: {total_tramite}\n\n")
 
-                output += f"RESUMEN GENERAL: {total_general} solicitudes creadas hoy\n\n"
-                
-                return output
-            except Exception as e:
-                return f"Error al ejecutar la consulta: {e}"
-        else:
-            query = """
-                SELECT
-                    COUNT(*) AS total
-                FROM requests r
-                JOIN procedures p ON r.procedure_id = p.id
-                WHERE DATE(r.start_date) = CURDATE()
-                  AND p.name = %(nombre_tramite)s
-                  AND r.deleted_at IS NULL;
-            """
-            try:
-                conn = get_db_connection()
-                cursor = conn.cursor(dictionary=True)
-                cursor.execute(query, {'nombre_tramite': nombre_tramite})
-                result = cursor.fetchone()
-                conn.close()
+            return "".join(output_parts)
 
-                if not result or result['total'] == 0:
-                    return f"No se encontraron solicitudes para el trámite '{nombre_tramite}' creadas hoy."
-                
-                total = result['total']
-                return f"Hoy se crearon un total de {total} solicitudes para el trámite '{nombre_tramite}'."
-
-            except Exception as e:
-                return f"Error al ejecutar la consulta: {e}"
+        except Exception as e:
+            return f"Error al ejecutar la consulta: {e}"
