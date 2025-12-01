@@ -1,7 +1,8 @@
 import os
 import mysql.connector
-from typing import Type
+from typing import Type, Optional
 from collections import defaultdict
+from datetime import datetime
 from pydantic import BaseModel, Field
 from crewai.tools import BaseTool
 from dotenv import load_dotenv
@@ -16,6 +17,8 @@ def get_db_connection():
         password=os.getenv("DB_PASSWORD"),
         database=os.getenv("DB_DATABASE")
     )
+
+# --- HERRAMIENTAS DE CONSULTA PUNTUAL (ID, DNI, USUARIO) ---
 
 class EstadoSolicitudPorIdInput(BaseModel):
     """Input for estado_solicitud_por_id tool."""
@@ -134,354 +137,6 @@ class EstadoUltimaSolicitudUsuarioTool(BaseTool):
             return str(result)
         except Exception as e:
             return f"Error executing query: {e}"
-
-class ConteoEstadosTramiteEspecificoInput(BaseModel):
-    """Input for conteo_estados_tramite_especifico tool."""
-    nombre_tramite: str = Field(..., description="el nombre exacto del trámite que se desea consultar")
-    fecha_inicio: str = Field(..., description="la fecha y hora de inicio del período (formato AAAA-MM-DD HH:MM:SS)")
-    fecha_fin: str = Field(..., description="la fecha y hora de fin del período (formato AAAA-MM-DD HH:MM:SS)")
-
-class ConteoEstadosTramiteEspecificoTool(BaseTool):
-    name: str = "conteo_estados_tramite_especifico"
-    description: str = "Utiliza esta herramienta para contar solicitudes de un trámite entre una fecha de inicio y una fecha de fin específicas. No la uses para consultas sobre 'hoy', para eso existe 'solicitudes_tramite_hoy'."
-    args_schema: Type[BaseModel] = ConteoEstadosTramiteEspecificoInput
-
-    def _run(self, nombre_tramite: str, fecha_inicio: str, fecha_fin: str) -> str:
-        query = """
-            WITH ultimo_estado AS (
-                SELECT r.id AS request_id, p.name AS tramite, rs.description AS estado,
-                       ROW_NUMBER() OVER (PARTITION BY r.id ORDER BY rsr.date DESC) AS rn
-                FROM requests r
-                JOIN procedures p ON r.procedure_id = p.id
-                JOIN request_state_records rsr ON rsr.request_id = r.id
-                JOIN request_states rs ON rsr.request_status_id = rs.id
-                WHERE p.name = %(nombre_tramite)s
-                  AND r.start_date BETWEEN %(fecha_inicio)s AND %(fecha_fin)s
-                  AND r.deleted_at IS NULL
-            )
-            SELECT tramite,
-                   SUM(CASE WHEN estado = 'Borrador' THEN 1 ELSE 0 END) AS borrador,
-                   SUM(CASE WHEN estado = 'Publicado' THEN 1 ELSE 0 END) AS publicado,
-                   SUM(CASE WHEN estado = 'En proceso' THEN 1 ELSE 0 END) AS en_proceso,
-                   SUM(CASE WHEN estado = 'Finalizado' THEN 1 ELSE 0 END) AS finalizado,
-                   SUM(CASE WHEN estado = 'Rechazado' THEN 1 ELSE 0 END) AS rechazado,
-                   SUM(CASE WHEN estado = 'Revocado' THEN 1 ELSE 0 END) AS revocado,
-                   COUNT(*) AS total
-            FROM ultimo_estado WHERE rn = 1 GROUP BY tramite ORDER BY tramite;
-        """
-        try:
-            conn = get_db_connection()
-            cursor = conn.cursor(dictionary=True)
-            cursor.execute(query, {'nombre_tramite': nombre_tramite, 'fecha_inicio': fecha_inicio, 'fecha_fin': fecha_fin})
-            result = cursor.fetchall()
-            conn.close()
-            return str(result)
-        except Exception as e:
-            return f"Error executing query: {e}"
-
-class SolicitudesPorEstadoInput(BaseModel):
-    """Input for solicitudes_por_estado tool."""
-    fecha_inicio: str = Field(..., description="la fecha y hora de inicio del período (formato AAAA-MM-DD HH:MM:SS)")
-    fecha_fin: str = Field(..., description="la fecha y hora de fin del período (formato AAAA-MM-DD HH:MM:SS)")
-
-class SolicitudesPorEstadoTool(BaseTool):
-    name: str = "solicitudes_por_estado"
-    description: str = "Cuenta las solicitudes y sus estados para todos los trámites en un rango de fechas."
-    args_schema: Type[BaseModel] = SolicitudesPorEstadoInput
-
-    def _run(self, fecha_inicio: str, fecha_fin: str) -> str:
-        query = """
-            WITH ultimo_estado AS (
-                SELECT r.id AS request_id, p.name AS tramite, rs.description AS estado,
-                       ROW_NUMBER() OVER (PARTITION BY r.id ORDER BY rsr.date DESC) AS rn
-                FROM requests r
-                JOIN request_state_records rsr ON rsr.request_id = r.id
-                JOIN request_states rs ON rsr.request_status_id = rs.id
-                JOIN procedures p ON p.id = r.procedure_id
-                WHERE r.created_at BETWEEN %(fecha_inicio)s AND %(fecha_fin)s
-                  AND r.deleted_at IS NULL
-            )
-            SELECT tramite,
-                   SUM(CASE WHEN estado = 'Borrador' THEN 1 ELSE 0 END) AS borrador,
-                   SUM(CASE WHEN estado = 'Publicado' THEN 1 ELSE 0 END) AS publicado,
-                   SUM(CASE WHEN estado = 'En proceso' THEN 1 ELSE 0 END) AS en_proceso,
-                   SUM(CASE WHEN estado = 'Finalizado' THEN 1 ELSE 0 END) AS finalizado,
-                   SUM(CASE WHEN estado = 'Rechazado' THEN 1 ELSE 0 END) AS rechazado,
-                   SUM(CASE WHEN estado = 'Revocado' THEN 1 ELSE 0 END) AS revocado,
-                   COUNT(*) AS total
-            FROM ultimo_estado WHERE rn = 1 GROUP BY tramite ORDER BY tramite;
-        """
-        try:
-            conn = get_db_connection()
-            cursor = conn.cursor(dictionary=True)
-            cursor.execute(query, {'fecha_inicio': fecha_inicio, 'fecha_fin': fecha_fin})
-            result = cursor.fetchall()
-            conn.close()
-            return str(result)
-        except Exception as e:
-            return f"Error executing query: {e}"
-
-class ListAvailableReportsInput(BaseModel):
-    """Input for list_available_reports tool."""
-    pass
-
-class ListAvailableReportsTool(BaseTool):
-    name: str = "list_available_reports"
-    description: str = "Útil para cuando el usuario pregunta qué reportes, trámites o 'tramites' conoces o puedes hacer."
-    args_schema: Type[BaseModel] = ListAvailableReportsInput
-    tools_registry: dict = {}
-
-    def __init__(self, tools_registry: dict = None):
-        super().__init__()
-        if tools_registry:
-            self.tools_registry = tools_registry
-
-    def _run(self) -> str:
-        if not self.tools_registry:
-            return "No hay herramientas disponibles en el registro."
-
-        output = "Available reports:\n"
-        for idx, (tool_name, tool_instance) in enumerate(self.tools_registry.items(), start=1):
-            # Excluir la propia herramienta list_available_reports de la lista
-            if tool_name == "list_available_reports":
-                continue
-            output += f"{idx}. {tool_name}: {tool_instance.description}\n"
-
-        return output
-
-class ObtenerRolesUsuarioInput(BaseModel):
-    """Input para la herramienta obtener_roles_usuario."""
-    dni_usuario: str = Field(..., description="DNI del usuario a consultar.")
-
-class ObtenerRolesUsuarioTool(BaseTool):
-    name: str = "obtener_roles_usuario"
-    description: str = "Obtiene los roles asociados a un usuario a través de su DNI."
-    args_schema: Type[BaseModel] = ObtenerRolesUsuarioInput
-
-    def _run(self, dni_usuario: str) -> str:
-        # Limpiamos el DNI para más seguridad
-        dni_limpio = str(dni_usuario).strip()
-        print(f"DEBUG: [Tool] Consultando roles para el DNI: '{dni_limpio}'")
-
-        # La consulta probada, usando parámetros para todo
-        query = r"""
-            SELECT 
-                r.name AS rol
-            FROM users u
-            JOIN model_has_roles mhr 
-                ON mhr.model_id = u.id 
-               AND mhr.model_type = %(m_type)s
-            JOIN roles r 
-                ON r.id = mhr.role_id
-            WHERE u.dni = %(dni)s;
-        """
-        
-        # Parámetros que se pasarán de forma segura a la consulta
-        params = {
-            'dni': dni_limpio,
-            'm_type': r'App\Models\User'
-        }
-
-        try:
-            conn = get_db_connection()
-            if not conn:
-                return "Error: No se pudo establecer la conexión con la base de datos."
-
-            cursor = conn.cursor(dictionary=True)
-            cursor.execute(query, params)
-            result = cursor.fetchall()
-            conn.close()
-            
-            if not result:
-                return f"No se encontraron roles para el DNI: {dni_limpio}"
-                
-            roles = [row['rol'] for row in result]
-            return f"El usuario con DNI {dni_limpio} tiene los siguientes roles: {', '.join(roles)}"
-        except Exception as e:
-            return f"Error al ejecutar la consulta en la herramienta: {e}"
-
-
-class ListarUsuariosPorRolInput(BaseModel):
-    """Input para la herramienta ListarUsuariosPorRolTool."""
-    nombre_rol: str = Field(..., description="el nombre exacto del rol a consultar")
-
-class ListarUsuariosPorRolTool(BaseTool):
-    name: str = "listar_usuarios_por_rol"
-    description: str = "Lista a todos los usuarios que tienen un rol específico. Necesita el nombre exacto del rol a consultar."
-    args_schema: Type[BaseModel] = ListarUsuariosPorRolInput
-
-    def _run(self, nombre_rol: str) -> str:
-        # Consulta SQL con el modelo como parámetro para mayor seguridad y compatibilidad.
-        query = """
-            SELECT
-                u.name,
-                u.dni
-            FROM users u
-            JOIN model_has_roles mhr
-                ON u.id = mhr.model_id
-               AND mhr.model_type = %(model_type)s
-            JOIN roles r
-                ON r.id = mhr.role_id
-            WHERE r.name = %(nombre_rol)s;
-        """
-        # Parámetros para la consulta.
-        params = {
-            'nombre_rol': nombre_rol,
-            'model_type': r'App\Models\User'
-        }
-        try:
-            conn = get_db_connection()
-            cursor = conn.cursor(dictionary=True)
-            # Pasamos la consulta y los parámetros por separado.
-            cursor.execute(query, params)
-            result = cursor.fetchall()
-            conn.close()
-
-            if not result:
-                return f"No se encontraron usuarios con el rol '{nombre_rol}' en la base de datos."
-
-            usuarios_info = []
-            for row in result:
-                usuarios_info.append(f"Nombre: {row['name']}, DNI: {row['dni']}")
-
-            return f"Usuarios encontrados con el rol '{nombre_rol}':\n" + "\n".join(usuarios_info)
-        except Exception as e:
-            return f"Error al ejecutar la consulta: {e}"
-            
-class ConsultarAtencionesAgenteInput(BaseModel):
-    """Input para la herramienta ConsultarAtencionesAgenteTool."""
-    dni_agente: str = Field(..., description="El número de DNI del agente a consultar")
-    fecha_inicio: str = Field(..., description="La fecha y hora de inicio del periodo a consultar, en formato 'YYYY-MM-DD HH:MM:SS'")
-    fecha_fin: str = Field(..., description="La fecha y hora de fin del periodo a consultar, en formato 'YYYY-MM-DD HH:MM:SS'")
-
-class ConsultarAtencionesAgenteTool(BaseTool):
-    name: str = "consultar_atenciones_agente"
-    description: str = "Consulta la cantidad de atenciones (cambios de estado) realizadas por un agente, por tipo de trámite y estado, en un periodo de tiempo específico. Utiliza el DNI del agente y un rango de fechas para el filtro."
-    args_schema: Type[BaseModel] = ConsultarAtencionesAgenteInput
-
-    def _run(self, dni_agente: str, fecha_inicio: str, fecha_fin: str) -> str:
-        query = """
-            SELECT
-              p.name AS nombre_tramite,
-              rs.description AS estado,
-              COUNT(*) AS total_cambios
-            FROM
-              request_state_records rsr
-            JOIN
-              users u ON rsr.user_id = u.id
-            JOIN
-              request_states rs ON rsr.request_status_id = rs.id
-            JOIN
-              requests r ON rsr.request_id = r.id
-            JOIN
-              procedures p ON r.procedure_id = p.id
-            WHERE
-              u.dni = %(dni_agente)s
-              AND rsr.created_at BETWEEN %(fecha_inicio)s AND %(fecha_fin)s
-              AND rsr.request_status_id NOT IN (0, 1, 2)
-            GROUP BY
-              p.name,
-              rs.description
-            ORDER BY
-              p.name,
-              COUNT(*) DESC;
-        """
-        try:
-            conn = get_db_connection()
-            cursor = conn.cursor(dictionary=True)
-            cursor.execute(query, {
-                'dni_agente': dni_agente,
-                'fecha_inicio': fecha_inicio,
-                'fecha_fin': fecha_fin
-            })
-            result = cursor.fetchall()
-            conn.close()
-
-            if not result:
-                return f"No se encontraron cambios de estado para el agente con DNI {dni_agente} entre {fecha_inicio} y {fecha_fin}."
-
-            output = f"Resumen de atenciones para el agente con DNI {dni_agente} entre {fecha_inicio} y {fecha_fin}:\n"
-            tramites_agrupados = {}
-            for row in result:
-                tramite = row['nombre_tramite']
-                estado = row['estado']
-                cantidad = row['total_cambios']
-
-                if tramite not in tramites_agrupados:
-                    tramites_agrupados[tramite] = []
-                tramites_agrupados[tramite].append(f"{estado}: {cantidad}")
-
-            for tramite, estados in tramites_agrupados.items():
-                output += f"- {tramite}: {', '.join(estados)}\n"
-
-            return output
-        except Exception as e:
-            return f"Error al ejecutar la consulta: {e}"
-
-class ConsultarAtencionesAgentePorTramiteInput(BaseModel):
-    """Input para la herramienta ConsultarAtencionesAgentePorTramiteTool."""
-    dni_agente: str = Field(..., description="El número de DNI del agente a consultar")
-    nombre_tramite: str = Field(..., description="El nombre exacto del trámite a consultar")
-    fecha_inicio: str = Field(..., description="La fecha y hora de inicio del periodo a consultar, en formato 'YYYY-MM-DD HH:MM:SS'")
-    fecha_fin: str = Field(..., description="La fecha y hora de fin del periodo a consultar, en formato 'YYYY-MM-DD HH:MM:SS'")
-
-class ConsultarAtencionesAgentePorTramiteTool(BaseTool):
-    name: str = "consultar_atenciones_agente_por_tramite"
-    description: str = "Consulta la cantidad de atenciones (cambios de estado) realizadas por un agente, para un tipo de trámite específico y en un periodo de tiempo. Utiliza el DNI del agente, el nombre exacto del trámite y un rango de fechas para el filtro."
-    args_schema: Type[BaseModel] = ConsultarAtencionesAgentePorTramiteInput
-
-    def _run(self, dni_agente: str, nombre_tramite: str, fecha_inicio: str, fecha_fin: str) -> str:
-        query = """
-            SELECT
-              p.name AS nombre_tramite,
-              rs.description AS estado,
-              COUNT(*) AS total_cambios
-            FROM
-              request_state_records rsr
-            JOIN
-              users u ON rsr.user_id = u.id
-            JOIN
-              request_states rs ON rsr.request_status_id = rs.id
-            JOIN
-              requests r ON rsr.request_id = r.id
-            JOIN
-              procedures p ON r.procedure_id = p.id
-            WHERE
-              u.dni = %(dni_agente)s
-              AND rsr.created_at BETWEEN %(fecha_inicio)s AND %(fecha_fin)s
-              AND rsr.request_status_id NOT IN (0, 1, 2)
-              AND p.name = %(nombre_tramite)s
-            GROUP BY
-              p.name,
-              rs.description
-            ORDER BY
-              p.name,
-              COUNT(*) DESC;
-        """
-        try:
-            conn = get_db_connection()
-            cursor = conn.cursor(dictionary=True)
-            cursor.execute(query, {
-                'dni_agente': dni_agente,
-                'nombre_tramite': nombre_tramite,
-                'fecha_inicio': fecha_inicio,
-                'fecha_fin': fecha_fin
-            })
-            result = cursor.fetchall()
-            conn.close()
-
-            if not result:
-                return f"No se encontraron cambios de estado para el agente con DNI {dni_agente} para el trámite '{nombre_tramite}' entre {fecha_inicio} y {fecha_fin}."
-
-            output = f"Resumen de atenciones para el agente con DNI {dni_agente} en el trámite '{nombre_tramite}':\n"
-            for row in result:
-                estado = row['estado']
-                cantidad = row['total_cambios']
-                output += f"- {estado}: {cantidad} cambios de estado.\n"
-
-            return output
-        except Exception as e:
-            return f"Error al ejecutar la consulta: {e}"
 
 class ListarSolicitudesPorDniInput(BaseModel):
     """Input para la herramienta ListarSolicitudesPorDniTool."""
@@ -625,13 +280,103 @@ class ConsultarMensajesSolicitudTool(BaseTool):
         except Exception as e:
             return f"Error al ejecutar la consulta: {e}"
 
+
+# --- HERRAMIENTAS DE REPORTES Y CONTEOS (CONSOLIDADAS) ---
+class CantidadSolicitudesPorEstadoInput(BaseModel):
+    """Input para la herramienta cantidad_solicitudes_por_estado."""
+    nombre_estado: str = Field(..., description="El nombre exacto o parcial del estado a contar (ej: 'En proceso', 'Finalizado').")
+    nombre_tramite: Optional[str] = Field(default=None, description="Opcional. Nombre del trámite para filtrar (ej: 'Licencia').")
+
+class CantidadSolicitudesPorEstadoTool(BaseTool):
+    name: str = "cantidad_solicitudes_por_estado"
+    description: str = (
+        "Herramienta PRINCIPAL para reportes. "
+        "Devuelve las solicitudes del AÑO CORRIENTE (1 Ene a 31 Dic del año actual) agrupadas por trámite en el estado indicado. "
+        "No requiere fechas, calcula automáticamente el año actual."
+    )
+    args_schema: Type[BaseModel] = CantidadSolicitudesPorEstadoInput
+
+    def _run(self, nombre_estado: str, nombre_tramite: Optional[str] = None) -> str:
+        # --- Lógica de AÑO CORRIENTE Automática ---
+        now = datetime.now()
+        current_year = now.year
+        
+        # Fijamos el rango desde el 1 de Enero hasta el 31 de Diciembre del año en curso
+        fecha_desde = f"{current_year}-01-01"
+        fecha_hasta = f"{current_year}-12-31 23:59:59"
+        
+        rango_msg = f"del año {current_year}"
+
+        # --- Construcción de la consulta con GROUP BY ---
+        query = """
+            SELECT p.name AS tramite, COUNT(r.id) as total
+            FROM requests r
+            JOIN request_state_records rsr ON r.id = rsr.request_id
+            JOIN request_states rs ON rsr.request_status_id = rs.id
+            JOIN procedures p ON r.procedure_id = p.id
+            WHERE rsr.id = (
+                SELECT MAX(sub_rsr.id)
+                FROM request_state_records sub_rsr
+                WHERE sub_rsr.request_id = r.id
+            )
+            AND rs.description LIKE %(nombre_estado)s
+            AND r.deleted_at IS NULL
+            AND r.start_date BETWEEN %(fecha_desde)s AND %(fecha_hasta)s
+        """
+        
+        params = {
+            'nombre_estado': f"%{nombre_estado}%",
+            'fecha_desde': fecha_desde,
+            'fecha_hasta': fecha_hasta
+        }
+
+        if nombre_tramite:
+            query += " AND p.name LIKE %(nombre_tramite)s"
+            params['nombre_tramite'] = f"%{nombre_tramite}%"
+
+        # Agrupamos por trámite para el desglose
+        query += " GROUP BY p.name ORDER BY total DESC"
+
+        try:
+            conn = get_db_connection()
+            cursor = conn.cursor(dictionary=True)
+            cursor.execute(query, params)
+            results = cursor.fetchall()
+            conn.close()
+            
+            # --- Formateo de la salida CON SALTOS DE LÍNEA FORZADOS ---
+            if not results:
+                filtros_txt = f"del trámite '{nombre_tramite}'" if nombre_tramite else ""
+                return f"No se encontraron solicitudes en estado '{nombre_estado}' {filtros_txt} en el año {current_year}."
+
+            # Encabezado
+            output = f"Las solicitudes en estado \"{nombre_estado}\" {rango_msg} son las siguientes:\n\n"
+            
+            total_general = 0
+            for i, row in enumerate(results, 1):
+                tramite = row['tramite']
+                count = row['total']
+                total_general += count
+                unit = "solicitud" if count == 1 else "solicitudes"
+                
+                # AQUI ESTA LA CORRECCIÓN: \n\n asegura el espacio en blanco visual
+                output += f"{i}. {tramite}: {count} {unit}\n\n"
+            
+            # Total separado también
+            output += f"Total: {total_general}"
+            
+            return output
+
+        except Exception as e:
+            return f"Error al ejecutar la consulta: {e}"
+
 class ReporteSolicitudesHoyInput(BaseModel):
     """Input for ReporteSolicitudesHoyTool."""
     pass
 
 class ReporteSolicitudesHoyTool(BaseTool):
     name: str = "reporte_solicitudes_hoy"
-    description: str = "Genera una lista detallada y un resumen de todas las solicitudes creadas en el día de hoy, ordenadas por trámite con mayor cantidad de solicitudes."
+    description: str = "Genera un reporte RÁPIDO de todas las solicitudes creadas HOY. Muestra resumen y detalles."
     args_schema: Type[BaseModel] = ReporteSolicitudesHoyInput
 
     def _run(self) -> str:
@@ -670,32 +415,176 @@ class ReporteSolicitudesHoyTool(BaseTool):
             summary_data = defaultdict(lambda: defaultdict(int))
 
             for idx, solicitud in enumerate(result, start=1):
-                # Detailed list entry
                 output_parts.append(
-                    f"{idx}. Solicitud de: \"{solicitud['nombre_tramite']}\"\n"
-                    f"   - Numero de la solicitud: \"{solicitud['request_id']}\"\n"
-                    f"   - Nombre del usuario: \"{solicitud['nombre_usuario']}\"\n"
-                    f"   - Estado: \"{solicitud['estado_actual']}\"\n\n"
+                    f"{idx}. {solicitud['nombre_tramite']} - {solicitud['nombre_usuario']} ({solicitud['estado_actual']})\n"
                 )
-                # Update summary data
                 summary_data[solicitud['nombre_tramite']][solicitud['estado_actual']] += 1
 
-            # Summary section
-            output_parts.append("="*40 + "\n\n")
-            output_parts.append("Resumen por Trámite y Estado:\n\n")
-            
-            if not summary_data:
-                output_parts.append("No hay solicitudes para resumir.\n")
-            else:
-                for tramite, states_counter in summary_data.items():
-                    output_parts.append(f"Trámite: {tramite}\n")
-                    total_tramite = 0
-                    for estado, count in states_counter.items():
-                        output_parts.append(f"  - {estado}: {count}\n")
-                        total_tramite += count
-                    output_parts.append(f"  Total para este trámite: {total_tramite}\n\n")
+            output_parts.append("\nResumen:\n")
+            for trámite, estados in summary_data.items():
+                total = sum(estados.values())
+                output_parts.append(f"- {trámite}: {total} (")
+                detalles = [f"{k}: {v}" for k, v in estados.items()]
+                output_parts.append(", ".join(detalles) + ")\n")
 
             return "".join(output_parts)
 
         except Exception as e:
             return f"Error al ejecutar la consulta: {e}"
+
+# --- HERRAMIENTAS ADMINISTRATIVAS Y DE AGENTES ---
+
+class ObtenerRolesUsuarioInput(BaseModel):
+    """Input para la herramienta obtener_roles_usuario."""
+    dni_usuario: str = Field(..., description="DNI del usuario a consultar.")
+
+class ObtenerRolesUsuarioTool(BaseTool):
+    name: str = "obtener_roles_usuario"
+    description: str = "Obtiene los roles asociados a un usuario a través de su DNI."
+    args_schema: Type[BaseModel] = ObtenerRolesUsuarioInput
+
+    def _run(self, dni_usuario: str) -> str:
+        dni_limpio = str(dni_usuario).strip()
+        query = r"""
+            SELECT r.name AS rol
+            FROM users u
+            JOIN model_has_roles mhr ON mhr.model_id = u.id AND mhr.model_type = %(m_type)s
+            JOIN roles r ON r.id = mhr.role_id
+            WHERE u.dni = %(dni)s;
+        """
+        try:
+            conn = get_db_connection()
+            cursor = conn.cursor(dictionary=True)
+            cursor.execute(query, {'dni': dni_limpio, 'm_type': r'App\Models\User'})
+            result = cursor.fetchall()
+            conn.close()
+            
+            if not result: return f"No se encontraron roles para el DNI: {dni_limpio}"
+            roles = [row['rol'] for row in result]
+            return f"El usuario {dni_limpio} tiene roles: {', '.join(roles)}"
+        except Exception as e:
+            return f"Error: {e}"
+
+class ListarUsuariosPorRolInput(BaseModel):
+    """Input para la herramienta ListarUsuariosPorRolTool."""
+    nombre_rol: str = Field(..., description="el nombre exacto del rol a consultar")
+
+class ListarUsuariosPorRolTool(BaseTool):
+    name: str = "listar_usuarios_por_rol"
+    description: str = "Lista a todos los usuarios que tienen un rol específico."
+    args_schema: Type[BaseModel] = ListarUsuariosPorRolInput
+
+    def _run(self, nombre_rol: str) -> str:
+        query = """
+            SELECT u.name, u.dni
+            FROM users u
+            JOIN model_has_roles mhr ON u.id = mhr.model_id AND mhr.model_type = %(model_type)s
+            JOIN roles r ON r.id = mhr.role_id
+            WHERE r.name = %(nombre_rol)s;
+        """
+        try:
+            conn = get_db_connection()
+            cursor = conn.cursor(dictionary=True)
+            cursor.execute(query, {'nombre_rol': nombre_rol, 'model_type': r'App\Models\User'})
+            result = cursor.fetchall()
+            conn.close()
+
+            if not result: return f"No se encontraron usuarios con rol '{nombre_rol}'."
+            return "\n".join([f"{row['name']} (DNI: {row['dni']})" for row in result])
+        except Exception as e:
+            return f"Error: {e}"
+
+class ConsultarAtencionesAgenteInput(BaseModel):
+    """Input para ConsultarAtencionesAgenteTool."""
+    dni_agente: str = Field(..., description="DNI del agente")
+    fecha_inicio: str = Field(..., description="Inicio (YYYY-MM-DD HH:MM:SS)")
+    fecha_fin: str = Field(..., description="Fin (YYYY-MM-DD HH:MM:SS)")
+
+class ConsultarAtencionesAgenteTool(BaseTool):
+    name: str = "consultar_atenciones_agente"
+    description: str = "Consulta productividad de un agente (cambios de estado realizados) en un periodo."
+    args_schema: Type[BaseModel] = ConsultarAtencionesAgenteInput
+
+    def _run(self, dni_agente: str, fecha_inicio: str, fecha_fin: str) -> str:
+        query = """
+            SELECT p.name AS nombre_tramite, rs.description AS estado, COUNT(*) AS total_cambios
+            FROM request_state_records rsr
+            JOIN users u ON rsr.user_id = u.id
+            JOIN request_states rs ON rsr.request_status_id = rs.id
+            JOIN requests r ON rsr.request_id = r.id
+            JOIN procedures p ON r.procedure_id = p.id
+            WHERE u.dni = %(dni_agente)s
+              AND rsr.created_at BETWEEN %(fecha_inicio)s AND %(fecha_fin)s
+              AND rsr.request_status_id NOT IN (0, 1, 2)
+            GROUP BY p.name, rs.description
+            ORDER BY p.name, COUNT(*) DESC;
+        """
+        try:
+            conn = get_db_connection()
+            cursor = conn.cursor(dictionary=True)
+            cursor.execute(query, {'dni_agente': dni_agente, 'fecha_inicio': fecha_inicio, 'fecha_fin': fecha_fin})
+            result = cursor.fetchall()
+            conn.close()
+            if not result: return "No se encontraron atenciones en ese periodo."
+            return str(result)
+        except Exception as e: return f"Error: {e}"
+
+class ConsultarAtencionesAgentePorTramiteInput(BaseModel):
+    """Input para ConsultarAtencionesAgentePorTramiteTool."""
+    dni_agente: str = Field(..., description="DNI del agente")
+    nombre_tramite: str = Field(..., description="Nombre del trámite")
+    fecha_inicio: str = Field(..., description="Inicio")
+    fecha_fin: str = Field(..., description="Fin")
+
+class ConsultarAtencionesAgentePorTramiteTool(BaseTool):
+    name: str = "consultar_atenciones_agente_por_tramite"
+    description: str = "Igual que consultar_atenciones_agente pero filtrando por un trámite específico."
+    args_schema: Type[BaseModel] = ConsultarAtencionesAgentePorTramiteInput
+
+    def _run(self, dni_agente: str, nombre_tramite: str, fecha_inicio: str, fecha_fin: str) -> str:
+        query = """
+            SELECT rs.description AS estado, COUNT(*) AS total_cambios
+            FROM request_state_records rsr
+            JOIN users u ON rsr.user_id = u.id
+            JOIN request_states rs ON rsr.request_status_id = rs.id
+            JOIN requests r ON rsr.request_id = r.id
+            JOIN procedures p ON r.procedure_id = p.id
+            WHERE u.dni = %(dni_agente)s
+              AND rsr.created_at BETWEEN %(fecha_inicio)s AND %(fecha_fin)s
+              AND rsr.request_status_id NOT IN (0, 1, 2)
+              AND p.name = %(nombre_tramite)s
+            GROUP BY rs.description
+            ORDER BY COUNT(*) DESC;
+        """
+        try:
+            conn = get_db_connection()
+            cursor = conn.cursor(dictionary=True)
+            cursor.execute(query, {'dni_agente': dni_agente, 'nombre_tramite': nombre_tramite, 'fecha_inicio': fecha_inicio, 'fecha_fin': fecha_fin})
+            result = cursor.fetchall()
+            conn.close()
+            if not result: return "No se encontraron datos."
+            return str(result)
+        except Exception as e: return f"Error: {e}"
+
+class ListAvailableReportsInput(BaseModel):
+    """Input for list_available_reports tool."""
+    pass
+
+class ListAvailableReportsTool(BaseTool):
+    name: str = "list_available_reports"
+    description: str = "Lista las capacidades de reporte disponibles."
+    args_schema: Type[BaseModel] = ListAvailableReportsInput
+    tools_registry: dict = {}
+
+    def __init__(self, tools_registry: dict = None):
+        super().__init__()
+        if tools_registry:
+            self.tools_registry = tools_registry
+
+    def _run(self) -> str:
+        if not self.tools_registry: return "No registry available."
+        output = "Available reports:\n"
+        for idx, (t_name, t_inst) in enumerate(self.tools_registry.items(), 1):
+            if t_name != "list_available_reports":
+                output += f"{idx}. {t_name}: {t_inst.description}\n"
+        return output

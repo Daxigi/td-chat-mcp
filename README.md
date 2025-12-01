@@ -15,7 +15,7 @@ pip install "fastapi" "uvicorn[standard]" "pydantic"
 To start the server, run the following command from the root of the project:
 
 ```bash
-uvicorn src.main:app --reload
+uvicorn src.main:app --reload --port 8876
 ```
 
 The server will be available at `http://127.0.0.1:8000`.
