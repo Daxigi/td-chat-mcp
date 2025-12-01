@@ -1,21 +1,11 @@
 from fastapi import FastAPI, HTTPException
 from typing import List
 import traceback
+import inspect
+from crewai.tools import BaseTool
+
 from .models import ToolExecutionRequest, ToolExecutionResponse
-from .tools import (
-    EstadoSolicitudPorIdTool,
-    EstadoUltimaSolicitudUsuarioTool,
-    ConteoEstadosTramiteEspecificoTool,
-    SolicitudesPorEstadoTool,
-    ListAvailableReportsTool,
-    ObtenerRolesUsuarioTool,
-    ListarUsuariosPorRolTool,
-    ConsultarAtencionesAgenteTool,
-    ConsultarAtencionesAgentePorTramiteTool,
-    ListarSolicitudesPorDniTool,
-    ConsultarMensajesSolicitudTool,
-    ReporteSolicitudesHoyTool,
-)
+from . import tools
 
 # --- App Initialization ---
 app = FastAPI(
@@ -25,23 +15,20 @@ app = FastAPI(
 )
 
 # --- Tool Registry ---
-# CORRECCIÓN: Crear primero el registry sin list_available_reports
-tools_registry = {
-    "estado_solicitud_por_id": EstadoSolicitudPorIdTool(),
-    "estado_ultima_solicitud_usuario": EstadoUltimaSolicitudUsuarioTool(),
-    "conteo_estados_tramite_especifico": ConteoEstadosTramiteEspecificoTool(),
-    "solicitudes_por_estado": SolicitudesPorEstadoTool(),
-    "obtener_roles_usuario": ObtenerRolesUsuarioTool(),
-    "listar_usuarios_por_rol": ListarUsuariosPorRolTool(),
-    "consultar_atenciones_agente": ConsultarAtencionesAgenteTool(),
-    "consultar_atenciones_agente_por_tramite": ConsultarAtencionesAgentePorTramiteTool(),
-    "listar_solicitudes_por_dni": ListarSolicitudesPorDniTool(),
-    "consultar_mensajes_solicitud": ConsultarMensajesSolicitudTool(),
-    "reporte_solicitudes_hoy": ReporteSolicitudesHoyTool(),
-}
+tools_registry = {}
+# Dynamically discover and register tools from the 'tools' module
+for name, cls in inspect.getmembers(tools, inspect.isclass):
+    if issubclass(cls, BaseTool) and cls is not BaseTool:
+        # Special handling for ListAvailableReportsTool, which needs the registry
+        if cls is tools.ListAvailableReportsTool:
+            continue
+        instance = cls()
+        tools_registry[instance.name] = instance
 
-# CORRECCIÓN: Luego añadir list_available_reports con el registry completo
-tools_registry["list_available_reports"] = ListAvailableReportsTool(tools_registry=tools_registry)
+# Add ListAvailableReportsTool at the end, passing the populated registry
+if 'ListAvailableReportsTool' in dir(tools):
+    # The registry is passed to the tool, so it can list the other tools
+    tools_registry["list_available_reports"] = tools.ListAvailableReportsTool(tools_registry=tools_registry)
 
 # --- API Endpoints ---
 
@@ -55,13 +42,15 @@ def list_tools() -> List[dict]:
     """Returns a list of available tools with their MCP-compatible schema."""
     tool_schemas = []
     for tool_name, tool in tools_registry.items():
-        tool_schemas.append(
-            {
-                "name": tool.name,
-                "description": tool.description,
-                "args_schema": tool.args_schema.model_json_schema(),
-            }
-        )
+        # Ensure the tool has the necessary attributes
+        if hasattr(tool, 'name') and hasattr(tool, 'description') and hasattr(tool, 'args_schema'):
+            tool_schemas.append(
+                {
+                    "name": tool.name,
+                    "description": tool.description,
+                    "args_schema": tool.args_schema.model_json_schema(),
+                }
+            )
     return tool_schemas
 
 @app.post("/tools/execute", summary="Execute a Tool")
@@ -76,8 +65,8 @@ async def execute_tool(request: ToolExecutionRequest) -> ToolExecutionResponse:
         )
 
     try:
-        print(f"Using Tool: {request.tool_name}")  # Imprimimos para confirmar
-        print(f"Arguments: {request.args}")  # AGREGADO: Debug de argumentos
+        print(f"Using Tool: {request.tool_name}")
+        print(f"Arguments: {request.args}")
         result = tool.run(**request.args)
         return ToolExecutionResponse(result=str(result))
     except Exception as e:
