@@ -16,19 +16,18 @@ app = FastAPI(
 
 # --- Tool Registry ---
 tools_registry = {}
-# Dynamically discover and register tools from the 'tools' module
+# Dynamically discover and register all tools from the 'tools' module
 for name, cls in inspect.getmembers(tools, inspect.isclass):
     if issubclass(cls, BaseTool) and cls is not BaseTool:
-        # Special handling for ListAvailableReportsTool, which needs the registry
-        if cls is tools.ListAvailableReportsTool:
-            continue
         instance = cls()
         tools_registry[instance.name] = instance
 
-# Add ListAvailableReportsTool at the end, passing the populated registry
-if 'ListAvailableReportsTool' in dir(tools):
-    # The registry is passed to the tool, so it can list the other tools
-    tools_registry["list_available_reports"] = tools.ListAvailableReportsTool(tools_registry=tools_registry)
+# After registering all tools, inject the complete registry into ListAvailableReportsTool
+# This allows it to list all other tools.
+if "List Available Reports" in tools_registry:
+    list_tool = tools_registry["List Available Reports"]
+    # The tool's __init__ allows for the registry to be set post-instantiation.
+    list_tool.tools_registry = tools_registry
 
 # --- API Endpoints ---
 

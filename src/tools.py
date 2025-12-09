@@ -25,7 +25,7 @@ class EstadoSolicitudPorIdInput(BaseModel):
     request_id: int = Field(..., description="el ID de la solicitud a consultar")
 
 class EstadoSolicitudPorIdTool(BaseTool):
-    name: str = "estado_solicitud_por_id"
+    name: str = "Estado Solicitud Por Id"
     description: str = "Consulta el estado y detalles de una solicitud específica usando su ID."
     args_schema: Type[BaseModel] = EstadoSolicitudPorIdInput
 
@@ -83,7 +83,7 @@ class EstadoUltimaSolicitudUsuarioInput(BaseModel):
     nombre_tramite: str = Field(..., description="el nombre exacto del trámite a consultar")
 
 class EstadoUltimaSolicitudUsuarioTool(BaseTool):
-    name: str = "estado_ultima_solicitud_usuario"
+    name: str = "Estado Ultima Solicitud Usuario"
     description: str = "Consulta el estado de la última solicitud de un trámite para un usuario (DNI)."
     args_schema: Type[BaseModel] = EstadoUltimaSolicitudUsuarioInput
 
@@ -143,7 +143,7 @@ class ListarSolicitudesPorDniInput(BaseModel):
     dni_usuario: str = Field(..., description="el número de DNI del usuario a consultar")
 
 class ListarSolicitudesPorDniTool(BaseTool):
-    name: str = "listar_solicitudes_por_dni"
+    name: str = "Listar Solicitudes Por Dni"
     description: str = "Lista todas las solicitudes realizadas por un usuario específico usando su DNI. Muestra información detallada de cada solicitud incluyendo ID, trámite, fechas, estado actual y última acción."
     args_schema: Type[BaseModel] = ListarSolicitudesPorDniInput
 
@@ -214,7 +214,7 @@ class ConsultarMensajesSolicitudInput(BaseModel):
     request_id: int = Field(..., description="el ID de la solicitud para consultar sus mensajes")
 
 class ConsultarMensajesSolicitudTool(BaseTool):
-    name: str = "consultar_mensajes_solicitud"
+    name: str = "Consultar Mensajes Solicitud"
     description: str = "Consulta todos los mensajes de la conversación asociada a una solicitud específica. Muestra el historial completo de mensajes ordenados cronológicamente."
     args_schema: Type[BaseModel] = ConsultarMensajesSolicitudInput
 
@@ -288,7 +288,7 @@ class CantidadSolicitudesPorEstadoInput(BaseModel):
     nombre_tramite: Optional[str] = Field(default=None, description="Opcional. Nombre del trámite para filtrar (ej: 'Licencia').")
 
 class CantidadSolicitudesPorEstadoTool(BaseTool):
-    name: str = "cantidad_solicitudes_por_estado"
+    name: str = "Cantidad Solicitudes Por Estado"
     description: str = (
         "Herramienta PRINCIPAL para reportes. "
         "Devuelve las solicitudes del AÑO CORRIENTE (1 Ene a 31 Dic del año actual) agrupadas por trámite en el estado indicado. "
@@ -375,7 +375,7 @@ class ReporteSolicitudesHoyInput(BaseModel):
     pass
 
 class ReporteSolicitudesHoyTool(BaseTool):
-    name: str = "reporte_solicitudes_hoy"
+    name: str = "Reporte Solicitudes Hoy"
     description: str = "Genera un reporte RÁPIDO de todas las solicitudes creadas HOY. Muestra resumen y detalles."
     args_schema: Type[BaseModel] = ReporteSolicitudesHoyInput
 
@@ -434,65 +434,65 @@ class ReporteSolicitudesHoyTool(BaseTool):
 
 # --- HERRAMIENTAS ADMINISTRATIVAS Y DE AGENTES ---
 
-class ObtenerRolesUsuarioInput(BaseModel):
-    """Input para la herramienta obtener_roles_usuario."""
-    dni_usuario: str = Field(..., description="DNI del usuario a consultar.")
+# class ObtenerRolesUsuarioInput(BaseModel):
+#     """Input para la herramienta obtener_roles_usuario."""
+#     dni_usuario: str = Field(..., description="DNI del usuario a consultar.")
 
-class ObtenerRolesUsuarioTool(BaseTool):
-    name: str = "obtener_roles_usuario"
-    description: str = "Obtiene los roles asociados a un usuario a través de su DNI."
-    args_schema: Type[BaseModel] = ObtenerRolesUsuarioInput
+# class ObtenerRolesUsuarioTool(BaseTool):
+#     name: str = "obtener_roles_usuario"
+#     description: str = "Obtiene los roles asociados a un usuario a través de su DNI."
+#     args_schema: Type[BaseModel] = ObtenerRolesUsuarioInput
 
-    def _run(self, dni_usuario: str) -> str:
-        dni_limpio = str(dni_usuario).strip()
-        query = r"""
-            SELECT r.name AS rol
-            FROM users u
-            JOIN model_has_roles mhr ON mhr.model_id = u.id AND mhr.model_type = %(m_type)s
-            JOIN roles r ON r.id = mhr.role_id
-            WHERE u.dni = %(dni)s;
-        """
-        try:
-            conn = get_db_connection()
-            cursor = conn.cursor(dictionary=True)
-            cursor.execute(query, {'dni': dni_limpio, 'm_type': r'App\Models\User'})
-            result = cursor.fetchall()
-            conn.close()
+#     def _run(self, dni_usuario: str) -> str:
+#         dni_limpio = str(dni_usuario).strip()
+#         query = r"""
+#             SELECT r.name AS rol
+#             FROM users u
+#             JOIN model_has_roles mhr ON mhr.model_id = u.id AND mhr.model_type = %(m_type)s
+#             JOIN roles r ON r.id = mhr.role_id
+#             WHERE u.dni = %(dni)s;
+#         """
+#         try:
+#             conn = get_db_connection()
+#             cursor = conn.cursor(dictionary=True)
+#             cursor.execute(query, {'dni': dni_limpio, 'm_type': r'App\Models\User'})
+#             result = cursor.fetchall()
+#             conn.close()
             
-            if not result: return f"No se encontraron roles para el DNI: {dni_limpio}"
-            roles = [row['rol'] for row in result]
-            return f"El usuario {dni_limpio} tiene roles: {', '.join(roles)}"
-        except Exception as e:
-            return f"Error: {e}"
+#             if not result: return f"No se encontraron roles para el DNI: {dni_limpio}"
+#             roles = [row['rol'] for row in result]
+#             return f"El usuario {dni_limpio} tiene roles: {', '.join(roles)}"
+#         except Exception as e:
+#             return f"Error: {e}"
 
-class ListarUsuariosPorRolInput(BaseModel):
-    """Input para la herramienta ListarUsuariosPorRolTool."""
-    nombre_rol: str = Field(..., description="el nombre exacto del rol a consultar")
+# class ListarUsuariosPorRolInput(BaseModel):
+#     """Input para la herramienta ListarUsuariosPorRolTool."""
+#     nombre_rol: str = Field(..., description="el nombre exacto del rol a consultar")
 
-class ListarUsuariosPorRolTool(BaseTool):
-    name: str = "listar_usuarios_por_rol"
-    description: str = "Lista a todos los usuarios que tienen un rol específico."
-    args_schema: Type[BaseModel] = ListarUsuariosPorRolInput
+# class ListarUsuariosPorRolTool(BaseTool):
+#     name: str = "listar_usuarios_por_rol"
+#     description: str = "Lista a todos los usuarios que tienen un rol específico."
+#     args_schema: Type[BaseModel] = ListarUsuariosPorRolInput
 
-    def _run(self, nombre_rol: str) -> str:
-        query = """
-            SELECT u.name, u.dni
-            FROM users u
-            JOIN model_has_roles mhr ON u.id = mhr.model_id AND mhr.model_type = %(model_type)s
-            JOIN roles r ON r.id = mhr.role_id
-            WHERE r.name = %(nombre_rol)s;
-        """
-        try:
-            conn = get_db_connection()
-            cursor = conn.cursor(dictionary=True)
-            cursor.execute(query, {'nombre_rol': nombre_rol, 'model_type': r'App\Models\User'})
-            result = cursor.fetchall()
-            conn.close()
+#     def _run(self, nombre_rol: str) -> str:
+#         query = """
+#             SELECT u.name, u.dni
+#             FROM users u
+#             JOIN model_has_roles mhr ON u.id = mhr.model_id AND mhr.model_type = %(model_type)s
+#             JOIN roles r ON r.id = mhr.role_id
+#             WHERE r.name = %(nombre_rol)s;
+#         """
+#         try:
+#             conn = get_db_connection()
+#             cursor = conn.cursor(dictionary=True)
+#             cursor.execute(query, {'nombre_rol': nombre_rol, 'model_type': r'App\Models\User'})
+#             result = cursor.fetchall()
+#             conn.close()
 
-            if not result: return f"No se encontraron usuarios con rol '{nombre_rol}'."
-            return "\n".join([f"{row['name']} (DNI: {row['dni']})" for row in result])
-        except Exception as e:
-            return f"Error: {e}"
+#             if not result: return f"No se encontraron usuarios con rol '{nombre_rol}'."
+#             return "\n".join([f"{row['name']} (DNI: {row['dni']})" for row in result])
+#         except Exception as e:
+#             return f"Error: {e}"
 
 class ConsultarAtencionesAgenteInput(BaseModel):
     """Input para ConsultarAtencionesAgenteTool."""
@@ -501,7 +501,7 @@ class ConsultarAtencionesAgenteInput(BaseModel):
     fecha_fin: str = Field(..., description="Fin (YYYY-MM-DD HH:MM:SS)")
 
 class ConsultarAtencionesAgenteTool(BaseTool):
-    name: str = "consultar_atenciones_agente"
+    name: str = "Consultar Atenciones Agente"
     description: str = "Consulta productividad de un agente (cambios de estado realizados) en un periodo."
     args_schema: Type[BaseModel] = ConsultarAtencionesAgenteInput
 
@@ -537,7 +537,7 @@ class ConsultarAtencionesAgentePorTramiteInput(BaseModel):
     fecha_fin: str = Field(..., description="Fin")
 
 class ConsultarAtencionesAgentePorTramiteTool(BaseTool):
-    name: str = "consultar_atenciones_agente_por_tramite"
+    name: str = "Consultar Atenciones Agente Por Tramite"
     description: str = "Igual que consultar_atenciones_agente pero filtrando por un trámite específico."
     args_schema: Type[BaseModel] = ConsultarAtencionesAgentePorTramiteInput
 
@@ -571,7 +571,7 @@ class ListAvailableReportsInput(BaseModel):
     pass
 
 class ListAvailableReportsTool(BaseTool):
-    name: str = "list_available_reports"
+    name: str = "List Available Reports"
     description: str = "Lista las capacidades de reporte disponibles."
     args_schema: Type[BaseModel] = ListAvailableReportsInput
     tools_registry: dict = {}
@@ -585,6 +585,6 @@ class ListAvailableReportsTool(BaseTool):
         if not self.tools_registry: return "No registry available."
         output = "Available reports:\n"
         for idx, (t_name, t_inst) in enumerate(self.tools_registry.items(), 1):
-            if t_name != "list_available_reports":
+            if t_name != self.name:
                 output += f"{idx}. {t_name}: {t_inst.description}\n"
         return output
