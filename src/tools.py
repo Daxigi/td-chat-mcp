@@ -374,9 +374,13 @@ class ReporteSolicitudesHoyInput(BaseModel):
     """Input for ReporteSolicitudesHoyTool."""
     pass
 
+class ReporteSolicitudesHoyInput(BaseModel):
+    """Input for ReporteSolicitudesHoyTool."""
+    pass
+
 class ReporteSolicitudesHoyTool(BaseTool):
     name: str = "Reporte Solicitudes Hoy"
-    description: str = "Genera un reporte RÁPIDO de todas las solicitudes creadas HOY. Muestra resumen y detalles."
+    description: str = "Genera un reporte RÁPIDO de todas las solicitudes creadas HOY. Muestra resumen y detalles completos."
     args_schema: Type[BaseModel] = ReporteSolicitudesHoyInput
 
     def _run(self) -> str:
@@ -416,16 +420,24 @@ class ReporteSolicitudesHoyTool(BaseTool):
 
             for idx, solicitud in enumerate(result, start=1):
                 output_parts.append(
-                    f"{idx}. {solicitud['nombre_tramite']} - {solicitud['nombre_usuario']} ({solicitud['estado_actual']})\n"
+                    f"{idx}. Solicitud de: \"{solicitud['nombre_tramite']}\"\n"
+                    f"   - Numero de la solicitud: \"{solicitud['request_id']}\"\n"
+                    f"   - Nombre del usuario: \"{solicitud['nombre_usuario']}\"\n"
+                    f"   - Estado: \"{solicitud['estado_actual']}\"\n\n"
                 )
                 summary_data[solicitud['nombre_tramite']][solicitud['estado_actual']] += 1
 
-            output_parts.append("\nResumen:\n")
-            for trámite, estados in summary_data.items():
-                total = sum(estados.values())
-                output_parts.append(f"- {trámite}: {total} (")
-                detalles = [f"{k}: {v}" for k, v in estados.items()]
-                output_parts.append(", ".join(detalles) + ")\n")
+            # Sección de Resumen
+            output_parts.append("="*40 + "\n\n")
+            output_parts.append("Resumen por Trámite y Estado:\n\n")
+            
+            for tramite, states_counter in summary_data.items():
+                output_parts.append(f"Trámite: {tramite}\n")
+                total_tramite = 0
+                for estado, count in states_counter.items():
+                    output_parts.append(f"  - {estado}: {count}\n")
+                    total_tramite += count
+                output_parts.append(f"  Total para este trámite: {total_tramite}\n\n")
 
             return "".join(output_parts)
 
