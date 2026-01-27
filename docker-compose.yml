@@ -1,18 +1,21 @@
 services:
   app:
     build: .
-    image: mcp-server # Nombre de la imagen que construyes
-    container_name: mcp-container # ¡Nombre fijo y crucial!
+    image: mcp-server
+    container_name: mcp-container
     ports:
-      - "8876:8765" # Expone el puerto 8876 de tu VPS al 8765 del contenedor
+      # HOST:CONTENEDOR
+      # Entras al VPS por el 8876 -> Redirige al 8765 del contenedor
+      - "8876:8765"
     env_file:
       - .env
     restart: always
     volumes:
+      # Mapeamos el código para cambios en caliente (opcional en prod, útil en dev)
       - ./src:/app/src
-    networks: # ¡Sección añadida!
+    networks:
       - shared-network
 
-networks: # ¡Sección añadida!
+networks:
   shared-network:
     external: true

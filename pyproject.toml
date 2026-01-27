@@ -1,18 +1,20 @@
-[tool.poetry]
+[project]
 name = "mcp-server"
 version = "0.1.0"
-description = "A server exposing tools via the Model Context Protocol (MCP)."
-authors = ["Gemini"]
-
-[tool.poetry.dependencies]
-python = ">=3.10,<3.14"
-fastapi = "^0.110.0"
-uvicorn = {extras = ["standard"], version = "^0.27.1"}
-pydantic = "^2.6.6" # Updated pydantic version
-mysql-connector-python = "^8.4.0"
-python-dotenv = "^1.0.1"
-crewai = "^0.186.1"
-
+description = "Servidor MCP"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "crewai>=1.7.0",
+    "fastapi>=0.124.4",
+    "fastmcp>=2.12.5",
+    "mysql-connector-python>=9.5.0",
+    "networkx>=3.4.2",
+    "openpyxl>=3.1.5",
+    "python-dotenv>=1.1.1",
+    "pyvis>=0.3.2",
+    "uvicorn>=0.38.0",
+]
 
 [[tool.poetry.packages]]
 include = "src"

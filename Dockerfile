@@ -1,24 +1,29 @@
+# 1. Imagen base (Mantenemos Python 3.12 como tenías)
+FROM python:3.12-slim-bookworm
 
-# 1. Base Image
-FROM python:3.12-slim
+# 2. Copiamos el binario de 'uv' directamente (Truco moderno: no hace falta pip install)
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /bin/uv
 
-# 2. Set up Environment
+# 3. Configuración de entorno
 WORKDIR /app
-ENV PYTHONDONTWRITEBYTECODE 1
-ENV PYTHONUNBUFFERED 1
+ENV UV_COMPILE_BYTECODE=1
+ENV UV_LINK_MODE=copy
+ENV PYTHONPATH=/app
 
-# 3. Install Poetry
-RUN pip install poetry
+# 4. Copiamos ficheros de dependencias
+# IMPORTANTE: Ahora usamos uv.lock, no poetry.lock
+COPY pyproject.toml uv.lock ./
 
-# 4. Copy Project Files and Install Dependencies
-COPY pyproject.toml poetry.lock ./
-RUN poetry install --no-root
+# 5. Instalamos dependencias
+# --frozen: Usa versiones exactas del lockfile
+# --no-cache: No guarda basura para mantener la imagen ligera
+RUN uv sync --frozen --no-cache --no-dev
 
-# 5. Copy Source Code
+# 6. Copiamos el código fuente
 COPY src/ ./src/
 
-# 6. Expose Port
+# 7. Exponemos el puerto interno (8765 como tenías configurado)
 EXPOSE 8765
 
-# 7. Run Command
-CMD ["poetry", "run", "uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8765"]
+# 8. Comando de arranque usando 'uv run'
+CMD ["uv", "run", "uvicorn", "src.server:app", "--host", "0.0.0.0", "--port", "8765"]
